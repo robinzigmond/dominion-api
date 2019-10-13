@@ -1,0 +1,4 @@
+.stack-work/
+dominion-api.cabal
+*~
+dbtest.db
