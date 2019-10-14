@@ -17,5 +17,4 @@ At the time of writing this is at a very early stage - the basic API functionali
 - Change the database backend from SQLite to Postgres
 - Add authentication to the POST/PUT/DELETE routes to add, update and delete cards (once done, the card database will not need updating except if more cards are released - this is not a huge task and I am happy to manage it myself, and I would like to do it by POSTing to the API but obviously need to protect it from vandalism when this is live)
 - Add documentation, probably using [Servant.Docs](https://haskell-servant.readthedocs.io/en/stable/tutorial/Docs.html)
-- enable the filter for the "BaseFirstEd" and "BaseSecondEd" sets to include those in "Base" (which is for cards in both editions), and similarly for Intrigue
 - make the query parameters more userfriendly (allow kebab-case instead of CamelCase, change eg CanSometimes to just "sometimes")

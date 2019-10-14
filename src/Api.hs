@@ -109,7 +109,15 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
                                 ++ debtQuery ++ kingdomQuery ++ nonTerminalQuery
                                 ++ villageQuery ++ noHandSizeReductionQuery
                                 ++ drawsQuery ++ trashQuery
-                  setsQuery = if null sets then [] else [CardSet <-. sets]
+                  setsQuery
+                    | null sets = []
+                    | otherwise = let filloutBase = if BaseFirstEd `elem` sets || BaseSecondEd `elem` sets
+                                                    then Base:sets
+                                                    else sets
+                                      allSets = if IntrigueFirstEd `elem` sets || IntrigueSecondEd `elem` sets
+                                                then Intrigue:filloutBase
+                                                else filloutBase
+                                  in [CardSet <-. allSets]
                   minCostQuery = case maybeMinCost of
                                     Nothing -> []
                                     Just minCost -> [CardCoinCost !=. Nothing,
