@@ -12,9 +12,11 @@ I hope it will be useful but the main motivation for this is, after a year or so
 
 At the time of writing this is at a very early stage - the basic API functionality is working but there is a lot to do before this will be ready to deploy to a production environment. The following is what I expect to be an ever-changing (and hopefully generally decreasing!) list of things still to do:
 
-- Add a "comesWith" field (or some other name) which shows, for Kingdom cards, any other cards that come into play with them, and conversely for non-Kingdom cards, which Kingdom cards can bring them into play. Will also be useful for split piles.
+
 - Add defaults to some fields: for example make costInPotions and costInDebt automatically false if they are not supplied but costInCoins is
 - Change the database backend from SQLite to Postgres
 - Add authentication to the POST/PUT/DELETE routes to add, update and delete cards (once done, the card database will not need updating except if more cards are released - this is not a huge task and I am happy to manage it myself, and I would like to do it by POSTing to the API but obviously need to protect it from vandalism when this is live)
 - Add documentation, probably using [Servant.Docs](https://haskell-servant.readthedocs.io/en/stable/tutorial/Docs.html)
 - make the query parameters more userfriendly (allow kebab-case instead of CamelCase, change eg CanSometimes to just "sometimes")
+- add further, very basic, API endpoints to list all sets and all types (sets in particular will be useful for applications, which can just make one API call to discover all the currently existing sets)
+- make any error messages (eg. requests for a card name that doesn't exist) return them as JSON via an "error" key or similar

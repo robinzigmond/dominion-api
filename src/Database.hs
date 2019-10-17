@@ -49,4 +49,8 @@ TypeCard
     cardId CardId
     typeId TypeId
     UniqueTypeCard cardId typeId
+CardLinks
+    cardId CardId
+    linkedCards [CardId]
+    UniqueCardLinks cardId
 |]
