@@ -52,12 +52,13 @@ type DominionAPI = "cards" :> Get '[JSON] [CardWithTypesAndLinks]
                         :> QueryParam "village" CanDoItQueryChoice
                         :> QueryParam "no-reduce-hand-size" CanDoItQueryChoice
                         :> QueryParam "draws" CanDoItQueryChoice :> QueryFlag "trasher"
-                        :> QueryParams "type" CardType :> Get '[JSON] [CardWithTypesAndLinks]
+                        :> QueryParams "type" CardType :> QueryParams "linked" Text
+                        :> Get '[JSON] [CardWithTypesAndLinks]
                     :<|> "cards" :> Capture "card-name" Text :> Get '[JSON] CardWithTypesAndLinks
                     :<|> "cards" :> "new" :> ReqBody '[JSON] CardWithTypesAndLinks :> PostNoContent '[JSON] NoContent
                     :<|> "cards" :> "update" :> Capture "card-name" Text
                         :> ReqBody '[JSON] CardWithTypesAndLinks :> PutNoContent '[JSON] NoContent
-                    :<|> "cards" :> "delete" :> Capture "card-name" Text :> PostNoContent '[JSON] NoContent
+                    :<|> "cards" :> "delete" :> Capture "card-name" Text :> DeleteNoContent '[JSON] NoContent
 
 
 data CanDoItQueryChoice = CanSometimes | CanAlways deriving (Read)
@@ -102,17 +103,25 @@ getOneCard name = liftIO . runDBActions dbConn $ do
 getFilteredCards :: [Set] -> Maybe Int -> Maybe Int -> Maybe Bool -> Maybe Bool
                         -> Bool -> Maybe CanDoItQueryChoice
                         -> Maybe CanDoItQueryChoice -> Maybe CanDoItQueryChoice
-                        -> Maybe CanDoItQueryChoice -> Bool -> [CardType]
+                        -> Maybe CanDoItQueryChoice -> Bool -> [CardType] -> [Text]
                         -> Handler [CardWithTypesAndLinks]
 getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
         mustBeKingdom maybeNonTerminal maybeVillage maybeNoHandsizeReduction
-        maybeDraws mustTrash types
+        maybeDraws mustTrash types links
         = liftIO . runDBActions dbConn $ do
-            filteredExceptTypes <- selectList queries []
+            filteredExceptTypesAndLinks <- selectList queries []
             correctTypes <- selectList typeQuery []
             joinTableItems <- selectList [TypeCardTypeId <-. map entityKey correctTypes] []
-            filteredCards <- selectList [CardId <-. map entityKey filteredExceptTypes,
-                                CardId <-. map (typeCardCardId . entityVal) joinTableItems] []
+            filteredExceptLinks <- selectList [CardId <-. map entityKey filteredExceptTypesAndLinks,
+                                      CardId <-. map (typeCardCardId . entityVal) joinTableItems] []
+            cardsToLinkTo <- selectList linkQuery []
+            linkedCards <- forM cardsToLinkTo $ \cardToLink -> do
+                maybeLinked <- selectFirst [CardLinksCardId ==. entityKey cardToLink] []
+                case maybeLinked of
+                    Nothing -> return []
+                    Just linked -> return . cardLinksLinkedCards . entityVal $ linked
+            filteredCards <- selectList [CardId <-. map entityKey filteredExceptLinks,
+                                CardId <-. concat linkedCards] []
             liftIO . fmap catMaybes . sequence $ getTypesAndLinks <$> filteredCards
             where queries = setsQuery ++ minCostQuery ++ maxCostQuery ++ potionQuery
                                 ++ debtQuery ++ kingdomQuery ++ nonTerminalQuery
@@ -161,6 +170,7 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
                                                     map Just (possibleChoices choice)]
                   trashQuery = if mustTrash then [CardTrashes ==. True] else []
                   typeQuery = if null types then [] else [TypeName <-. types]
+                  linkQuery = if null links then [] else [CardName <-. links]
 
 
 insertCard :: CardWithTypesAndLinks -> Handler ()
@@ -183,12 +193,12 @@ insertCard (CardWithTypesAndLinks baseCard types links) =
                         Nothing -> return ()
                         Just cardWithLinks ->
                             let alreadyLinked = cardLinksLinkedCards (entityVal cardWithLinks) in
-                            if (entityKey card) `elem` alreadyLinked
+                            if cardId `elem` alreadyLinked
                                 then return () -- already there, nothing to do
                                 else do
                                     delete (entityKey cardWithLinks)
                                     insert $ CardLinks (cardLinksCardId . entityVal $ cardWithLinks)
-                                        (entityKey card : alreadyLinked)
+                                        (cardId : alreadyLinked)
                                     return ()
                     return . Just . entityKey $ card
         insert $ CardLinks cardId $ catMaybes maybeLinkedIds
@@ -232,6 +242,9 @@ updateCard name (CardWithTypesAndLinks baseCard types links) = liftIO . runDBAct
                     insert $ CardLinks (cardLinksCardId . entityVal $ linkRecord)
                         (entityKey <$> catMaybes linkedCards)
                     return ()
+            -- note, if the update removes cards from the linked list, this doesn't reciprocally remove the
+            -- updated card from those cards linked-lists. Doesn't seem critical though, might add to the
+            -- todo list.
         Nothing -> return ()
 
 
