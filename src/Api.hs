@@ -176,14 +176,17 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
             joinTableItems <- selectList [TypeCardTypeId <-. map entityKey correctTypes] []
             filteredExceptLinks <- selectList [CardId <-. map entityKey filteredExceptTypesAndLinks,
                                       CardId <-. map (typeCardCardId . entityVal) joinTableItems] []
-            cardsToLinkTo <- selectList linkQuery []
-            linkedCards <- forM cardsToLinkTo $ \cardToLink -> do
-                maybeLinked <- selectFirst [CardLinksCardId ==. entityKey cardToLink] []
-                case maybeLinked of
-                    Nothing -> return []
-                    Just linked -> return . cardLinksLinkedCards . entityVal $ linked
-            filteredCards <- selectList [CardId <-. map entityKey filteredExceptLinks,
-                                CardId <-. concat linkedCards] []
+            filteredCards <- if null links
+                then return filteredExceptLinks
+                else do
+                    cardsToLinkTo <- selectList [CardName <-. links] []
+                    linkedCards <- forM cardsToLinkTo $ \cardToLink -> do
+                        maybeLinked <- selectFirst [CardLinksCardId ==. entityKey cardToLink] []
+                        case maybeLinked of
+                            Nothing -> return []
+                            Just linked -> return . cardLinksLinkedCards . entityVal $ linked
+                    selectList [CardId <-. map entityKey filteredExceptLinks,
+                        CardId <-. concat linkedCards] []
             liftIO . fmap catMaybes . sequence $ getTypesAndLinks <$> filteredCards
             where queries = setsQuery ++ minCostQuery ++ maxCostQuery ++ potionQuery
                                 ++ debtQuery ++ kingdomQuery ++ nonTerminalQuery
@@ -232,7 +235,6 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
                                                     map Just (possibleChoices choice)]
                   trashQuery = if mustTrash then [CardTrashes ==. True] else []
                   typeQuery = if null types then [] else [TypeName <-. types]
-                  linkQuery = if null links then [] else [CardName <-. links]
 
 
 insertCard :: CardWithTypesAndLinks -> Handler ()
