@@ -34,6 +34,7 @@ dependencies:
 - resourcet
 - unordered-containers
 - http-api-data
+- casing
 
 library:
   source-dirs: src
