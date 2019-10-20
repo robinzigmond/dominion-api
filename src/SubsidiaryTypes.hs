@@ -1,9 +1,12 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module SubsidiaryTypes where
 
 import Data.Aeson
+import Data.Char (toLower)
+import Data.Text (pack)
 import Database.Persist.TH
 import GHC.Generics
 import Servant (FromHttpApiData(..))
@@ -44,7 +47,14 @@ derivePersistField "Set"
 
 data CanDoIt = Always | Sometimes | Never deriving (Eq, Ord, Show, Read, Generic)
 
-instance ToJSON CanDoIt
-instance FromJSON CanDoIt
+instance ToJSON CanDoIt where
+    toJSON = String . pack . map toLower . show
+
+instance FromJSON CanDoIt where
+    parseJSON (String "always") = return Always
+    parseJSON (String "sometimes") = return Sometimes
+    parseJSON (String "never") = return Never
+    parseJSON _ = fail "invalid value - must be always, sometimes or never"
+ 
 
 derivePersistField "CanDoIt"

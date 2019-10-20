@@ -8,6 +8,7 @@ module Api where
 import Control.Monad (forM, forM_, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson
+import Data.Aeson.Types (Parser)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.List as L
 import Data.Maybe (catMaybes, fromMaybe)
@@ -27,11 +28,70 @@ dbConn :: Text
 dbConn = "c:\\Users\\robin\\Documents\\code\\dominion-api\\dbtest.db"
 
 
+-- custom FromJSON and ToJSON instances. These are mostly similar to the ones Persistent would have
+-- auto-generated, but have important improvements:
+-- 1) using more user-friendly names for certain fields and values
+-- 2) allowing some fields to take default values under certain conditions
+instance FromJSON Card where
+    parseJSON (Object v) =
+        Card
+        <$> v .: "name"
+        <*> v .: "set"
+        <*> v .:? "coin-cost"
+        <*> potionCost
+        <*> debtCost
+        <*> v .: "main-text"
+        <*> v .:? "other-text"
+        <*> v .: "is-kingdom"
+        <*> v .:? "non-terminal"
+        <*> v .:? "extra-actions"
+        <*> v .:? "returns-card"
+        <*> v .:? "increase-hand-size"
+        <*> v .: "trashes"
+        where potionCost = do
+                maybePotion <- v .:? "potion-cost" :: Parser (Maybe Bool)
+                maybeCoin <- v .:? "coin-cost" :: Parser (Maybe Int)
+                return $ if maybePotion == Nothing
+                            then if maybeCoin == Nothing
+                                then Nothing
+                                else Just False
+                            else maybePotion
+
+              debtCost = do
+                maybeDebt <- v .:? "debt-cost" :: Parser (Maybe Int)
+                maybeCoin <- v .:? "coin-cost" :: Parser (Maybe Int)
+                return $ if maybeDebt == Nothing
+                            then if maybeCoin == Nothing
+                                then Nothing
+                                else Just 0
+                            else maybeDebt
+
+
+instance ToJSON Card where
+    toJSON (Card name set coinCost potionCost debtCost mainText otherText isKingdom nonTerminal
+            extraActions returnsCard increaseHandSize trashes)
+        = object ["name" .= name,
+                  "set" .= set,
+                  "coin-cost" .= coinCost,
+                  "potion-cost" .= potionCost,
+                  "debt-cost" .= debtCost,
+                  "main-text" .= mainText,
+                  "other-text" .= otherText,
+                  "is-kingdom" .= isKingdom,
+                  "non-terminal" .= nonTerminal,
+                  "extra-actions" .= extraActions,
+                  "returns-card" .= returnsCard,
+                  "increase-hand-size" .= increaseHandSize,
+                  "trashes" .= trashes
+                  ]
+
+
 data CardWithTypesAndLinks = CardWithTypesAndLinks Card [CardType] [Text] deriving (Generic)
 
 instance FromJSON CardWithTypesAndLinks where
     parseJSON (Object v) =
-        CardWithTypesAndLinks <$> parsedCard <*> v .: "types" <*> v .: "linked-cards"
+        CardWithTypesAndLinks <$> parsedCard <*> v .: "types"
+            <*> fmap (fromMaybe []) (v .:? "linked-cards")
         where parsedCard = parseJSON (Object v)  
 
 
@@ -64,7 +124,9 @@ type DominionAPI = "cards" :> Get '[JSON] [CardWithTypesAndLinks]
 data CanDoItQueryChoice = CanSometimes | CanAlways deriving (Read)
 
 instance FromHttpApiData CanDoItQueryChoice where
-    parseQueryParam = readTextData
+    parseQueryParam "sometimes" = Right CanSometimes
+    parseQueryParam "always" = Right CanAlways
+    parseQueryParam x = Left $ Data.Text.append "invalid parameter for filter: " x
 
 
 possibleChoices :: CanDoItQueryChoice -> [CanDoIt]

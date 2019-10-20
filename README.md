@@ -13,8 +13,6 @@ I hope it will be useful but the main motivation for this is, after a year or so
 At the time of writing this is at a very early stage - the basic API functionality is working but there is a lot to do before this will be ready to deploy to a production environment. The following is what I expect to be an ever-changing (and hopefully generally decreasing!) list of things still to do:
 
 
-- Add defaults to some fields: for example make costInPotions and costInDebt automatically false if they are not supplied but costInCoins is. (And make linked-cards an empty array if not provided.)
-- Make it so that, when updating a card so as to remove a card that it was linked to, the card gets removed from all the reciprocal links
 - Change the database backend from SQLite to Postgres
 - Add authentication to the POST/PUT/DELETE routes to add, update and delete cards (once done, the card database will not need updating except if more cards are released - this is not a huge task and I am happy to manage it myself, and I would like to do it by POSTing to the API but obviously need to protect it from vandalism when this is live)
 - Add documentation, probably using [Servant.Docs](https://haskell-servant.readthedocs.io/en/stable/tutorial/Docs.html)

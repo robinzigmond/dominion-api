@@ -29,7 +29,7 @@ runDBActions :: Text -> ReaderT SqlBackend (NoLoggingT (ResourceT IO)) a -> IO a
 runDBActions conn = runSqlite conn . asSqlBackendReader
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
-Card json
+Card
     name Text
     set Set
     coinCost Int Maybe
