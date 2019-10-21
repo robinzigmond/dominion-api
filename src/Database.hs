@@ -25,8 +25,14 @@ import SubsidiaryTypes
 asSqlBackendReader :: ReaderT SqlBackend m a -> ReaderT SqlBackend m a
 asSqlBackendReader = id
 
-runDBActions :: Text -> ReaderT SqlBackend (NoLoggingT (ResourceT IO)) a -> IO a
-runDBActions conn = runSqlite conn . asSqlBackendReader
+
+dbConn :: Text
+dbConn = "c:\\Users\\robin\\Documents\\code\\dominion-api\\dbtest.db"
+
+
+runDBActions :: ReaderT SqlBackend (NoLoggingT (ResourceT IO)) a -> IO a
+runDBActions = runSqlite dbConn . asSqlBackendReader
+
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
 Card

@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeOperators #-}
 
@@ -8,99 +7,19 @@ module Api where
 import Control.Monad (forM, forM_, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson
-import Data.Aeson.Types (Parser)
-import qualified Data.HashMap.Strict as HM
 import qualified Data.List as L
-import Data.Maybe (catMaybes, fromMaybe)
+import Data.Maybe (catMaybes)
 import Data.Text hiding (map, concat, null)
 import Database.Persist
 import Database.Persist.Sqlite
-import GHC.Generics
 import Network.Wai
 import Servant
 import Web.HttpApiData (readTextData)
 
 import Database (Card(..), Type(..), TypeCard(..), CardLinks(..), EntityField(..), runDBActions, migrateAll)
+import Instances
 import SubsidiaryTypes
 
-
-dbConn :: Text
-dbConn = "c:\\Users\\robin\\Documents\\code\\dominion-api\\dbtest.db"
-
-
--- custom FromJSON and ToJSON instances. These are mostly similar to the ones Persistent would have
--- auto-generated, but have important improvements:
--- 1) using more user-friendly names for certain fields and values
--- 2) allowing some fields to take default values under certain conditions
-instance FromJSON Card where
-    parseJSON (Object v) =
-        Card
-        <$> v .: "name"
-        <*> v .: "set"
-        <*> v .:? "coin-cost"
-        <*> potionCost
-        <*> debtCost
-        <*> v .: "main-text"
-        <*> v .:? "other-text"
-        <*> v .: "is-kingdom"
-        <*> v .:? "non-terminal"
-        <*> v .:? "extra-actions"
-        <*> v .:? "returns-card"
-        <*> v .:? "increase-hand-size"
-        <*> v .: "trashes"
-        where potionCost = do
-                maybePotion <- v .:? "potion-cost" :: Parser (Maybe Bool)
-                maybeCoin <- v .:? "coin-cost" :: Parser (Maybe Int)
-                return $ if maybePotion == Nothing
-                            then if maybeCoin == Nothing
-                                then Nothing
-                                else Just False
-                            else maybePotion
-
-              debtCost = do
-                maybeDebt <- v .:? "debt-cost" :: Parser (Maybe Int)
-                maybeCoin <- v .:? "coin-cost" :: Parser (Maybe Int)
-                return $ if maybeDebt == Nothing
-                            then if maybeCoin == Nothing
-                                then Nothing
-                                else Just 0
-                            else maybeDebt
-
-
-instance ToJSON Card where
-    toJSON (Card name set coinCost potionCost debtCost mainText otherText isKingdom nonTerminal
-            extraActions returnsCard increaseHandSize trashes)
-        = object ["name" .= name,
-                  "set" .= set,
-                  "coin-cost" .= coinCost,
-                  "potion-cost" .= potionCost,
-                  "debt-cost" .= debtCost,
-                  "main-text" .= mainText,
-                  "other-text" .= otherText,
-                  "is-kingdom" .= isKingdom,
-                  "non-terminal" .= nonTerminal,
-                  "extra-actions" .= extraActions,
-                  "returns-card" .= returnsCard,
-                  "increase-hand-size" .= increaseHandSize,
-                  "trashes" .= trashes
-                  ]
-
-
-data CardWithTypesAndLinks = CardWithTypesAndLinks Card [CardType] [Text] deriving (Generic)
-
-instance FromJSON CardWithTypesAndLinks where
-    parseJSON (Object v) =
-        CardWithTypesAndLinks <$> parsedCard <*> v .: "types"
-            <*> fmap (fromMaybe []) (v .:? "linked-cards")
-        where parsedCard = parseJSON (Object v)  
-
-
-instance ToJSON CardWithTypesAndLinks where
-    toJSON (CardWithTypesAndLinks card types linked)
-        = Object $ HM.insert "types" (toJSON types)
-            $ HM.insert "linked-cards" (toJSON linked) (fromObject $ toJSON card)
-        where fromObject (Object obj) = obj
-              fromObject _ = HM.empty -- can't happen, but a "sensible" default in case of madness!
 
 
 type DominionAPI = "cards" :> Get '[JSON] [CardWithTypesAndLinks]
@@ -121,21 +40,8 @@ type DominionAPI = "cards" :> Get '[JSON] [CardWithTypesAndLinks]
                     :<|> "cards" :> "delete" :> Capture "card-name" Text :> DeleteNoContent '[JSON] NoContent
 
 
-data CanDoItQueryChoice = CanSometimes | CanAlways deriving (Read)
-
-instance FromHttpApiData CanDoItQueryChoice where
-    parseQueryParam "sometimes" = Right CanSometimes
-    parseQueryParam "always" = Right CanAlways
-    parseQueryParam x = Left $ Data.Text.append "invalid parameter for filter: " x
-
-
-possibleChoices :: CanDoItQueryChoice -> [CanDoIt]
-possibleChoices CanSometimes = [Always, Sometimes]
-possibleChoices CanAlways = [Always]
-
-
 getTypesAndLinks :: Entity Card -> IO (Maybe CardWithTypesAndLinks)
-getTypesAndLinks card = runDBActions dbConn $ do
+getTypesAndLinks card = runDBActions $ do
     typeCards <- selectList [TypeCardCardId ==. entityKey card] []
     types <- selectList [TypeId <-. map (typeCardTypeId . entityVal) typeCards] []
     maybeLinks <- selectFirst [CardLinksCardId ==. entityKey card] []
@@ -149,13 +55,13 @@ getTypesAndLinks card = runDBActions dbConn $ do
 
 
 getAllCards :: Handler [CardWithTypesAndLinks]
-getAllCards = liftIO . runDBActions dbConn $ do
+getAllCards = liftIO . runDBActions $ do
     allCards <- selectList [] []
     liftIO . fmap catMaybes . sequence $ getTypesAndLinks <$> allCards
 
 
 getOneCard :: Text -> Handler (Maybe CardWithTypesAndLinks)
-getOneCard name = liftIO . runDBActions dbConn $ do
+getOneCard name = liftIO . runDBActions $ do
     maybeCard <- selectFirst [CardName ==. name] []
     case maybeCard of
         Nothing -> return Nothing
@@ -170,7 +76,7 @@ getFilteredCards :: [Set] -> Maybe Int -> Maybe Int -> Maybe Bool -> Maybe Bool
 getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
         mustBeKingdom maybeNonTerminal maybeVillage maybeNoHandsizeReduction
         maybeDraws mustTrash types links
-        = liftIO . runDBActions dbConn $ do
+        = liftIO . runDBActions $ do
             filteredExceptTypesAndLinks <- selectList queries []
             correctTypes <- selectList typeQuery []
             joinTableItems <- selectList [TypeCardTypeId <-. map entityKey correctTypes] []
@@ -239,7 +145,7 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
 
 insertCard :: CardWithTypesAndLinks -> Handler ()
 insertCard (CardWithTypesAndLinks baseCard types links) =
-    liftIO . runDBActions dbConn $ do
+    liftIO . runDBActions $ do
         runMigration migrateAll
         cardId <- insert baseCard
         -- insert linked cards, "both ways". First insert them directly for the card under consideration
@@ -279,7 +185,7 @@ insertCard (CardWithTypesAndLinks baseCard types links) =
 
 updateCard :: Text -> CardWithTypesAndLinks -> Handler ()
 -- similar adjustments needed here
-updateCard name (CardWithTypesAndLinks baseCard types links) = liftIO . runDBActions dbConn $ do
+updateCard name (CardWithTypesAndLinks baseCard types links) = liftIO . runDBActions $ do
     existingCard <- selectFirst [CardName ==. name] []
     case existingCard of
         Just oldCard -> do
@@ -313,7 +219,7 @@ updateCard name (CardWithTypesAndLinks baseCard types links) = liftIO . runDBAct
 
 
 deleteCard :: Text -> Handler ()
-deleteCard name = liftIO . runDBActions dbConn $ do
+deleteCard name = liftIO . runDBActions $ do
     existingCard <- selectFirst [CardName ==. name] []
     case existingCard of
         Just card -> do

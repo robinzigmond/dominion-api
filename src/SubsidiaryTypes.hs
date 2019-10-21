@@ -1,11 +1,11 @@
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module SubsidiaryTypes where
 
 import Data.Aeson
-import Data.Text (pack, unpack)
+import Data.Text (pack, unpack, append)
 import Database.Persist.TH
 import GHC.Generics
 import Servant (FromHttpApiData(..))
@@ -21,6 +21,8 @@ data CardType = Action | Treasure | Victory | Curse | Attack | Reaction | Durati
                 | Project
                 deriving (Eq, Show, Read, Generic)
 
+derivePersistField "CardType"
+
 instance ToJSON CardType where
     toJSON = String . pack . kebab . show
 
@@ -32,14 +34,14 @@ instance FromJSON CardType where
 instance FromHttpApiData CardType where
     parseQueryParam = readTextData . pack . pascal . unpack
 
-derivePersistField "CardType"
-
 
 data Set = Base | BaseFirstEd | BaseSecondEd | Intrigue | IntrigueFirstEd
             | IntrigueSecondEd | Seaside | Alchemy | Prosperity
             | Cornucopia | Hinterlands | DarkAges | Guilds
             | Adventures | Empires | Nocturne | Renaissance | Promo
             deriving (Eq, Show, Read, Generic)
+
+derivePersistField "Set"
 
 instance ToJSON Set where
     toJSON = String . pack . kebab . show
@@ -52,10 +54,10 @@ instance FromJSON Set where
 instance FromHttpApiData Set where
     parseQueryParam = readTextData . pack . pascal . unpack
 
-derivePersistField "Set"
-
 
 data CanDoIt = Always | Sometimes | Never deriving (Eq, Ord, Show, Read, Generic)
+
+derivePersistField "CanDoIt"
 
 instance ToJSON CanDoIt where
     toJSON = String . pack . kebab . show
@@ -64,5 +66,16 @@ instance FromJSON CanDoIt where
     parseJSON (String s) = case (readMaybe . pascal . unpack $ s :: Maybe CanDoIt) of
         Just c -> return c
     parseJSON _ = fail "invalid value - must be always, sometimes or never"
- 
-derivePersistField "CanDoIt"
+
+
+data CanDoItQueryChoice = CanSometimes | CanAlways deriving (Read)
+
+instance FromHttpApiData CanDoItQueryChoice where
+    parseQueryParam "sometimes" = Right CanSometimes
+    parseQueryParam "always" = Right CanAlways
+    parseQueryParam x = Left $ Data.Text.append "invalid parameter for filter: " x
+
+
+possibleChoices :: CanDoItQueryChoice -> [CanDoIt]
+possibleChoices CanSometimes = [Always, Sometimes]
+possibleChoices CanAlways = [Always]
