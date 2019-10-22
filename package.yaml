@@ -28,13 +28,14 @@ dependencies:
 - warp
 - servant-server
 - persistent
-- persistent-sqlite
+- persistent-postgresql
 - persistent-template
 - monad-logger
 - resourcet
 - unordered-containers
 - http-api-data
 - casing
+- bytestring
 
 library:
   source-dirs: src

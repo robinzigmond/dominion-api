@@ -11,7 +11,8 @@ import qualified Data.List as L
 import Data.Maybe (catMaybes)
 import Data.Text hiding (map, concat, null)
 import Database.Persist
-import Database.Persist.Sqlite
+import Database.Persist.Sql (runMigration)
+import Database.Persist.Postgresql (replace)
 import Network.Wai
 import Servant
 import Web.HttpApiData (readTextData)
@@ -189,7 +190,7 @@ updateCard name (CardWithTypesAndLinks baseCard types links) = liftIO . runDBAct
     existingCard <- selectFirst [CardName ==. name] []
     case existingCard of
         Just oldCard -> do
-            Database.Persist.Sqlite.replace (entityKey oldCard) baseCard
+            Database.Persist.Postgresql.replace (entityKey oldCard) baseCard
             -- for simplicity, although it's obviously less efficient, let's
             -- just delete all previous types for the card, and re-add the new ones
             typeCards <- selectList [TypeCardCardId ==. entityKey oldCard] []
