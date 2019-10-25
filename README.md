@@ -14,7 +14,6 @@ At the time of writing this is at a very early stage - the basic API functionali
 
 
 - Add authentication to the POST/PUT/DELETE routes to add, update and delete cards (once done, the card database will not need updating except if more cards are released - this is not a huge task and I am happy to manage it myself, and I would like to do it by POSTing to the API but obviously need to protect it from vandalism when this is live)
-- Read DB connection details from environment variables rather than using a hard-coded string (obviously vital before moving to production)
 - Add documentation, probably using [Servant.Docs](https://haskell-servant.readthedocs.io/en/stable/tutorial/Docs.html)
 - Add tests!
 - make any error messages (eg. requests for a card name that doesn't exist) return them as JSON via an "error" key or similar

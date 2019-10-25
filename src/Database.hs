@@ -14,21 +14,49 @@ import Control.Monad.Logger (runStderrLoggingT, NoLoggingT)
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.Resource (ResourceT)
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Char8 as B
 import Data.Text
 import Database.Persist
 import Database.Persist.Sql (SqlBackend)
 import Database.Persist.Postgresql
 import Database.Persist.TH
+import System.Environment (getEnv)
 
 import SubsidiaryTypes
 
 
-dbConn :: ByteString
-dbConn = "host=localhost dbname=dominion user=postgres password=elephant port=5432"
+data DbConnection = DbConnection {
+    dbHost :: ByteString,
+    dbName :: ByteString,
+    dbUser :: ByteString,
+    dbPassword :: ByteString,
+    port :: ByteString
+}
+
+
+readEnv :: Text -> IO ByteString
+readEnv = fmap (B.pack) . getEnv . unpack
+
+
+dbConnection :: IO DbConnection
+dbConnection = DbConnection <$> readEnv "dominionDbHost" <*> readEnv "dominionDbName"
+    <*> readEnv "dominionDbUser" <*> readEnv "dominionDbPassword" <*> readEnv "dominionDbPort"
+
+
+buildConnString :: DbConnection -> ByteString
+buildConnString (DbConnection host name user pw port) =
+    "host=" <> host <> " dbname=" <> name <> " user="
+        <> user <> " password=" <> pw <> " port=" <> port 
+
+
+dbConn :: IO ByteString
+dbConn = buildConnString <$> dbConnection
 
 
 runDBActions :: ReaderT SqlBackend (NoLoggingT (ResourceT IO)) a -> IO a
-runDBActions = runStderrLoggingT . withPostgresqlPool dbConn 10 . (liftIO .) . runSqlPersistMPool
+runDBActions ma = do
+    connStr <- dbConn
+    runStderrLoggingT . withPostgresqlPool connStr 10 $ liftIO . runSqlPersistMPool ma
 
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
