@@ -17,7 +17,8 @@ import Network.Wai
 import Servant
 import Web.HttpApiData (readTextData)
 
-import Database (Card(..), Type(..), TypeCard(..), CardLinks(..), EntityField(..), runDBActions, migrateAll)
+import Database (Card(..), Type(..), TypeCard(..), CardLinks(..), EntityField(..),
+    runDBActions, migrateAll)
 import Instances
 import SubsidiaryTypes
 
@@ -35,6 +36,8 @@ type DominionAPI = "cards" :> Get '[JSON] [CardWithTypesAndLinks]
                         :> QueryParams "type" CardType :> QueryParams "linked" Text
                         :> Get '[JSON] [CardWithTypesAndLinks]
                     :<|> "cards" :> Capture "card-name" Text :> Get '[JSON] CardWithTypesAndLinks
+                    :<|> "sets" :> Get '[JSON] [Set]
+                    :<|> "types" :> Get '[JSON] [CardType]
                     :<|> "cards" :> "new" :> ReqBody '[JSON] CardWithTypesAndLinks :> PostNoContent '[JSON] NoContent
                     :<|> "cards" :> "update" :> Capture "card-name" Text
                         :> ReqBody '[JSON] CardWithTypesAndLinks :> PutNoContent '[JSON] NoContent
@@ -142,6 +145,14 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
                                                     map Just (possibleChoices choice)]
                   trashQuery = if mustTrash then [CardTrashes ==. True] else []
                   typeQuery = if null types then [] else [TypeName <-. types]
+
+
+getSets :: Handler [Set]
+getSets = return [minBound..maxBound]
+
+
+getTypes :: Handler [CardType]
+getTypes = return [minBound..maxBound]
 
 
 insertCard :: CardWithTypesAndLinks -> Handler ()
@@ -257,6 +268,8 @@ server :: Server DominionAPI
 server = getAllCards
             :<|> getFilteredCards
             :<|> handlerWithError . getOneCard
+            :<|> getSets
+            :<|> getTypes
             :<|> doWithNoContent . insertCard
             :<|> (doWithNoContent .) . updateCard
             :<|> doWithNoContent . deleteCard

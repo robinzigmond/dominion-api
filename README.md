@@ -17,5 +17,4 @@ At the time of writing this is at a very early stage - the basic API functionali
 - Read DB connection details from environment variables rather than using a hard-coded string (obviously vital before moving to production)
 - Add documentation, probably using [Servant.Docs](https://haskell-servant.readthedocs.io/en/stable/tutorial/Docs.html)
 - Add tests!
-- add further, very basic, API endpoints to list all sets and all types (sets in particular will be useful for applications, which can just make one API call to discover all the currently existing sets)
 - make any error messages (eg. requests for a card name that doesn't exist) return them as JSON via an "error" key or similar

@@ -28,8 +28,7 @@ dbConn = "host=localhost dbname=dominion user=postgres password=elephant port=54
 
 
 runDBActions :: ReaderT SqlBackend (NoLoggingT (ResourceT IO)) a -> IO a
-runDBActions act = runStderrLoggingT . withPostgresqlPool dbConn 10
-                    $ \pool -> liftIO $ flip runSqlPersistMPool pool act
+runDBActions = runStderrLoggingT . withPostgresqlPool dbConn 10 . (liftIO .) . runSqlPersistMPool
 
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
