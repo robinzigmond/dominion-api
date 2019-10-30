@@ -1,4 +1,6 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeOperators #-}
 
@@ -7,20 +9,34 @@ module Api where
 import Control.Monad (forM, forM_, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson
+import Data.ByteString (ByteString)
 import qualified Data.List as L
 import Data.Maybe (catMaybes)
 import Data.Text hiding (map, concat, null)
+import Data.Typeable (Typeable)
 import Database.Persist
 import Database.Persist.Sql (runMigration)
 import Database.Persist.Postgresql (replace)
+import GHC.Generics
 import Network.Wai
 import Servant
-import Web.HttpApiData (readTextData)
 
 import Database
 import Instances
 import SubsidiaryTypes
 
+
+authCheck :: BasicAuthCheck ()
+authCheck = BasicAuthCheck $ \(BasicAuthData username password) -> do
+    theUsername <- readEnv "dominionAdminUser"
+    thePassword <- readEnv "dominionAdminPassword"
+    return $ if username == theUsername && password == thePassword
+        then Authorized ()
+        else Unauthorized
+
+
+authContext :: Context (BasicAuthCheck () ': '[])
+authContext = authCheck :. EmptyContext
 
 
 type DominionAPI = "cards" :> Get '[JSON] [CardWithTypesAndLinks]
@@ -37,10 +53,14 @@ type DominionAPI = "cards" :> Get '[JSON] [CardWithTypesAndLinks]
                     :<|> "cards" :> Capture "card-name" Text :> Get '[JSON] CardWithTypesAndLinks
                     :<|> "sets" :> Get '[JSON] [Set]
                     :<|> "types" :> Get '[JSON] [CardType]
-                    :<|> "cards" :> "new" :> ReqBody '[JSON] CardWithTypesAndLinks :> PostNoContent '[JSON] NoContent
-                    :<|> "cards" :> "update" :> Capture "card-name" Text
-                        :> ReqBody '[JSON] CardWithTypesAndLinks :> PutNoContent '[JSON] NoContent
-                    :<|> "cards" :> "delete" :> Capture "card-name" Text :> DeleteNoContent '[JSON] NoContent
+                    :<|> BasicAuth "dominion" () :> (
+                        "cards" :> "new" :> ReqBody '[JSON] CardWithTypesAndLinks
+                            :> PostNoContent '[JSON] NoContent
+                        :<|> "cards" :> "update" :> Capture "card-name" Text
+                            :> ReqBody '[JSON] CardWithTypesAndLinks :> PutNoContent '[JSON] NoContent
+                        :<|> "cards" :> "delete" :> Capture "card-name" Text
+                            :> DeleteNoContent '[JSON] NoContent
+                    )
 
 
 getTypesAndLinks :: Entity Card -> IO (Maybe CardWithTypesAndLinks)
@@ -269,13 +289,15 @@ server = getAllCards
             :<|> handlerWithError . getOneCard
             :<|> getSets
             :<|> getTypes
-            :<|> doWithNoContent . insertCard
-            :<|> (doWithNoContent .) . updateCard
-            :<|> doWithNoContent . deleteCard
+            :<|> (\_ -> doWithNoContent . insertCard
+                :<|> (doWithNoContent .) . updateCard
+                :<|> doWithNoContent . deleteCard
+            )
 
 
 dominionAPI :: Proxy DominionAPI
 dominionAPI = Proxy
 
+
 api :: Application
-api = serve dominionAPI server
+api = serveWithContext dominionAPI authContext server
