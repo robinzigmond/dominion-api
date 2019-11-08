@@ -129,15 +129,15 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
                         else filloutBase
                     let setsQuery = if null sets
                                         then []
-                                        else [c ^. CardSet `in_` valList sets]
+                                        else [c ^. CardSet `in_` valList allSets]
                     let minCostQuery = case maybeMinCost of
                             Nothing -> []
                             Just minCost -> [not_ . isNothing $ c ^. CardCoinCost,
                                                 c ^. CardCoinCost >=. val (Just minCost)]
                     let maxCostQuery = case maybeMaxCost of
                             Nothing -> []
-                            Just minCost -> [not_ . isNothing $ c ^. CardCoinCost,
-                                                c ^. CardCoinCost >=. val (Just minCost)]
+                            Just maxCost -> [not_ . isNothing $ c ^. CardCoinCost,
+                                                c ^. CardCoinCost <=. val (Just maxCost)]
                     let potionQuery = case maybeNeedsPotion of
                             Nothing -> []
                             Just needsPotion -> [c ^. CardPotionCost ==. val (Just needsPotion)]
