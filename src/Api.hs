@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeOperators #-}
 
@@ -15,7 +14,6 @@ import Database.Esqueleto
 import qualified Database.Persist as P
 import Database.Persist.Sql (runMigration)
 import Database.Persist.Postgresql (replace)
-import GHC.Generics hiding (from)
 import Network.Wai
 import Servant
 
@@ -134,18 +132,18 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
                                         else [c ^. CardSet `in_` valList sets]
                     let minCostQuery = case maybeMinCost of
                             Nothing -> []
-                            Just minCost -> [c ^. CardCoinCost !=. val Nothing,
+                            Just minCost -> [not_ . isNothing $ c ^. CardCoinCost,
                                                 c ^. CardCoinCost >=. val (Just minCost)]
                     let maxCostQuery = case maybeMaxCost of
                             Nothing -> []
-                            Just minCost -> [c ^. CardCoinCost !=. val Nothing,
+                            Just minCost -> [not_ . isNothing $ c ^. CardCoinCost,
                                                 c ^. CardCoinCost >=. val (Just minCost)]
                     let potionQuery = case maybeNeedsPotion of
                             Nothing -> []
                             Just needsPotion -> [c ^. CardPotionCost ==. val (Just needsPotion)]
                     let debtQuery = case maybeNeedsDebt of
                             Nothing -> []
-                            Just True -> [c ^. CardDebtCost !=. val Nothing,
+                            Just True -> [not_ . isNothing $ c ^. CardDebtCost,
                                             c ^. CardDebtCost >. val (Just 0)]
                             Just False -> [c ^. CardDebtCost ==. val (Just 0)]
                     let kingdomQuery = if mustBeKingdom then [c ^. CardIsKingdom ==.val  True] else []
@@ -164,7 +162,7 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
                     let drawsQuery = case maybeDraws of
                             Nothing -> []
                             Just choice ->
-                                [c ^. CardExtraBuy `in_` valList (map Just (possibleChoices choice))]
+                                [c ^. CardIncreasesHandSize `in_` valList (map Just (possibleChoices choice))]
                     let trashQuery = if mustTrash then [c ^. CardTrashes ==. val True] else []
                     let extraBuyQuery = case maybeExtraBuy of
                             Nothing -> []
@@ -225,6 +223,7 @@ insertCard (CardWithTypesAndLinks baseCard types links) =
                 -- so I don't have to expend too much effort on being user-friendly!)
                 Just card -> do
                     P.insert (LinkPairs cardId (entityKey card))
+                    P.insert (LinkPairs (entityKey card) cardId)
                     return ()
         forM_ types $ \typeName -> do
             -- check if the type already exists in the Type table.
@@ -261,7 +260,9 @@ updateCard name (CardWithTypesAndLinks baseCard types links) = liftIO . runDBAct
             forM_ (map entityKey currentRecords) P.delete
             linkedCards <- forM links $ \linkName -> P.selectFirst [CardName P.==. linkName] []
             let linkKeys = entityKey <$> catMaybes linkedCards
-            forM_ linkKeys $ insert . LinkPairs (entityKey oldCard)
+            forM_ linkKeys $ \linked -> do
+                insert $ LinkPairs (entityKey oldCard) linked
+                insert $ LinkPairs linked (entityKey oldCard)
         Nothing -> return ()
 
 
@@ -276,7 +277,7 @@ deleteCard name = liftIO . runDBActions $ do
             linkIds <- P.selectList ([LinkPairsCardOne P.==. entityKey card]
                 P.||. [LinkPairsCardTwo P.==. entityKey card])[]
             forM_ (entityKey <$> linkIds) P.delete
-            -- remove the linked card from ALL link records
+            -- finally remove the deleted card itself
             P.delete (entityKey card)
         Nothing -> return ()
 

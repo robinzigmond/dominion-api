@@ -56,7 +56,7 @@ instance FromJSON Card where
 
 instance ToJSON Card where
     toJSON (Card name set coinCost potionCost debtCost mainText otherText isKingdom nonTerminal
-            extraActions returnsCard increaseHandSize trashes extraBuy)
+            extraActions returnsCard increaseHandSize extraBuy trashes)
         = object ["name" .= name,
                   "set" .= set,
                   "coin-cost" .= coinCost,
@@ -69,8 +69,8 @@ instance ToJSON Card where
                   "extra-actions" .= extraActions,
                   "returns-card" .= returnsCard,
                   "increase-hand-size" .= increaseHandSize,
-                  "trashes" .= trashes,
-                  "extra-buy" .= extraBuy
+                  "extra-buy" .= extraBuy,
+                  "trashes" .= trashes
                   ]
 
 
