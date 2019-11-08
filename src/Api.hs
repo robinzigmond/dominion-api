@@ -6,18 +6,16 @@
 
 module Api where
 
-import Control.Monad (forM, forM_, when)
+import Control.Monad (forM, forM_)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson
-import Data.ByteString (ByteString)
-import qualified Data.List as L
 import Data.Maybe (catMaybes)
-import Data.Text hiding (map, concat, null)
-import Data.Typeable (Typeable)
-import Database.Persist
+import Data.Text hiding (map, concat, null, foldr, head, filter)
+import Database.Esqueleto
+import qualified Database.Persist as P
 import Database.Persist.Sql (runMigration)
 import Database.Persist.Postgresql (replace)
-import GHC.Generics
+import GHC.Generics hiding (from)
 import Network.Wai
 import Servant
 
@@ -48,6 +46,7 @@ type DominionAPI = "cards" :> Get '[JSON] [CardWithTypesAndLinks]
                         :> QueryParam "village" CanDoItQueryChoice
                         :> QueryParam "no-reduce-hand-size" CanDoItQueryChoice
                         :> QueryParam "draws" CanDoItQueryChoice :> QueryFlag "trasher"
+                        :> QueryParam "extra-buy" CanDoItQueryChoice
                         :> QueryParams "type" CardType :> QueryParams "linked" Text
                         :> Get '[JSON] [CardWithTypesAndLinks]
                     :<|> "cards" :> Capture "card-name" Text :> Get '[JSON] CardWithTypesAndLinks
@@ -63,107 +62,145 @@ type DominionAPI = "cards" :> Get '[JSON] [CardWithTypesAndLinks]
                     )
 
 
-getTypesAndLinks :: Entity Card -> IO (Maybe CardWithTypesAndLinks)
-getTypesAndLinks card = runDBActions $ do
-    typeCards <- selectList [TypeCardCardId ==. entityKey card] []
-    types <- selectList [TypeId <-. map (typeCardTypeId . entityVal) typeCards] []
-    maybeLinks <- selectFirst [CardLinksCardId ==. entityKey card] []
-    case maybeLinks of
-        Nothing -> return Nothing
-        Just links -> do
-            actualCards <- selectList [CardId <-. (cardLinksLinkedCards . entityVal) links] []
-            return . Just $ CardWithTypesAndLinks (entityVal card)
-                (map (typeName . entityVal) types)
-                (map (cardName . entityVal) actualCards)
-
-
 getAllCards :: Handler [CardWithTypesAndLinks]
 getAllCards = liftIO . runDBActions $ do
-    allCards <- selectList [] []
-    liftIO . fmap catMaybes . sequence $ getTypesAndLinks <$> allCards
+    sqlres <- select $
+        from $ \(c `InnerJoin` tc `InnerJoin` t `LeftOuterJoin` lp `LeftOuterJoin` c1) -> do
+            on (c1 ?. CardId ==. lp ?. LinkPairsCardTwo)
+            on (just (c ^. CardId) ==. lp ?. LinkPairsCardOne)
+            on (t ^. TypeId ==. tc ^. TypeCardTypeId)
+            on (c ^. CardId ==. tc ^. TypeCardCardId)
+            return (c, t, c1)
+    return $ foldr merge [] sqlres
+        where
+            resolveCard c t (Just c1) = CardWithTypesAndLinks (entityVal c) [typeName . entityVal $ t]
+                [cardName . entityVal $ c1]
+            resolveCard c t Nothing = CardWithTypesAndLinks (entityVal c) [typeName . entityVal $ t] []
+            mergeCards (c, t, Just c1) (CardWithTypesAndLinks card types links)
+                = CardWithTypesAndLinks card (typeName (entityVal  t) : types)
+                    (cardName (entityVal c1) : links)
+            mergeCards (c, t, Nothing) (CardWithTypesAndLinks card types links)
+                = CardWithTypesAndLinks card (typeName (entityVal  t) : types) links
+            merge (c, t, c1) [] = [resolveCard c t c1]
+            merge (c, t, c1) (cd@(CardWithTypesAndLinks card _ _) : cs)
+                | cardName (entityVal c) == cardName card
+                    = mergeCards (c, t, c1) cd : cs
+                | otherwise = cd : merge (c, t, c1) cs
 
 
 getOneCard :: Text -> Handler (Maybe CardWithTypesAndLinks)
 getOneCard name = liftIO . runDBActions $ do
-    maybeCard <- selectFirst [CardName ==. name] []
-    case maybeCard of
-        Nothing -> return Nothing
-        Just card -> liftIO . getTypesAndLinks $ card
+    sqlres <- select $
+        from $ \(c `InnerJoin` tc `InnerJoin` t `LeftOuterJoin` lp `LeftOuterJoin` c1) -> do
+            where_  (c ^. CardName ==. val name)
+            on (c1 ?. CardId ==. lp ?. LinkPairsCardTwo)
+            on (lp ?. LinkPairsCardOne ==. just (c ^. CardId))
+            on (t ^. TypeId ==. tc ^. TypeCardTypeId)
+            on (c ^. CardId ==. tc ^. TypeCardCardId)
+            return (c, t, c1)
+    return $ foldr merge Nothing sqlres
+        where merge (c, t, Just c1) Nothing
+                = Just $ CardWithTypesAndLinks (entityVal c) [typeName . entityVal $ t]
+                    [cardName . entityVal $ c1]
+              merge (c, t, Nothing) Nothing
+                = Just $ CardWithTypesAndLinks (entityVal c) [typeName . entityVal $ t] []
+              merge (c, t, Just c1) (Just (CardWithTypesAndLinks card types links))
+                = Just $ CardWithTypesAndLinks card (typeName (entityVal  t) : types)
+                    (cardName (entityVal c1) : links)
+              merge (c, t, Nothing) (Just (CardWithTypesAndLinks card types links))
+                = Just $ CardWithTypesAndLinks card (typeName (entityVal  t) : types) links
 
 
 getFilteredCards :: [Set] -> Maybe Int -> Maybe Int -> Maybe Bool -> Maybe Bool
                         -> Bool -> Maybe CanDoItQueryChoice
                         -> Maybe CanDoItQueryChoice -> Maybe CanDoItQueryChoice
-                        -> Maybe CanDoItQueryChoice -> Bool -> [CardType] -> [Text]
+                        -> Maybe CanDoItQueryChoice -> Bool -> Maybe CanDoItQueryChoice
+                        -> [CardType] -> [Text]
                         -> Handler [CardWithTypesAndLinks]
 getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
         mustBeKingdom maybeNonTerminal maybeVillage maybeNoHandsizeReduction
-        maybeDraws mustTrash types links
+        maybeDraws mustTrash maybeExtraBuy types links
         = liftIO . runDBActions $ do
-            filteredExceptTypesAndLinks <- selectList queries []
-            correctTypes <- selectList typeQuery []
-            joinTableItems <- selectList [TypeCardTypeId <-. map entityKey correctTypes] []
-            filteredExceptLinks <- selectList [CardId <-. map entityKey filteredExceptTypesAndLinks,
-                                      CardId <-. map (typeCardCardId . entityVal) joinTableItems] []
-            filteredCards <- if null links
-                then return filteredExceptLinks
-                else do
-                    cardsToLinkTo <- selectList [CardName <-. links] []
-                    linkedCards <- forM cardsToLinkTo $ \cardToLink -> do
-                        maybeLinked <- selectFirst [CardLinksCardId ==. entityKey cardToLink] []
-                        case maybeLinked of
-                            Nothing -> return []
-                            Just linked -> return . cardLinksLinkedCards . entityVal $ linked
-                    selectList [CardId <-. map entityKey filteredExceptLinks,
-                        CardId <-. concat linkedCards] []
-            liftIO . fmap catMaybes . sequence $ getTypesAndLinks <$> filteredCards
-            where queries = setsQuery ++ minCostQuery ++ maxCostQuery ++ potionQuery
-                                ++ debtQuery ++ kingdomQuery ++ nonTerminalQuery
-                                ++ villageQuery ++ noHandSizeReductionQuery
-                                ++ drawsQuery ++ trashQuery
-                  setsQuery
-                    | null sets = []
-                    | otherwise = let filloutBase = if BaseFirstEd `elem` sets || BaseSecondEd `elem` sets
-                                                    then Base:sets
-                                                    else sets
-                                      allSets = if IntrigueFirstEd `elem` sets || IntrigueSecondEd `elem` sets
-                                                then Intrigue:filloutBase
-                                                else filloutBase
-                                  in [CardSet <-. allSets]
-                  minCostQuery = case maybeMinCost of
-                                    Nothing -> []
-                                    Just minCost -> [CardCoinCost !=. Nothing,
-                                                        CardCoinCost >=. Just minCost]
-                  maxCostQuery = case maybeMaxCost of
-                                    Nothing -> []
-                                    Just maxCost -> [CardCoinCost !=. Nothing,
-                                                        CardCoinCost <=. Just maxCost]
-                  potionQuery = case maybeNeedsPotion of
-                                    Nothing -> []
-                                    Just needsPotion -> [CardPotionCost ==. Just needsPotion]
-                  debtQuery = case maybeNeedsDebt of
-                                Nothing -> []
-                                Just True -> [CardDebtCost !=. Nothing,
-                                                CardDebtCost >. Just 0]
-                                Just False -> [CardDebtCost ==. Just 0]
-                  kingdomQuery = if mustBeKingdom then [CardIsKingdom ==. True] else []
-                  nonTerminalQuery = case maybeNonTerminal of
-                                        Nothing -> []
-                                        Just choice -> [CardNonTerminal <-. map Just (possibleChoices choice)]
-                  villageQuery = case maybeVillage of
-                                    Nothing -> []
-                                    Just choice -> [CardGivesExtraActions <-.
-                                                        map Just (possibleChoices choice)]
-                  noHandSizeReductionQuery = case maybeNoHandsizeReduction of
-                                                Nothing -> []
-                                                Just choice -> [CardReturnsCard <-.
-                                                                    map Just (possibleChoices choice)]
-                  drawsQuery = case maybeDraws of
-                                Nothing -> []
-                                Just choice -> [CardIncreasesHandSize <-.
-                                                    map Just (possibleChoices choice)]
-                  trashQuery = if mustTrash then [CardTrashes ==. True] else []
-                  typeQuery = if null types then [] else [TypeName <-. types]
+            sqlres <- select $
+                from $ \(c `InnerJoin` tc `InnerJoin` t `LeftOuterJoin` lp `LeftOuterJoin` c1) -> do
+                    let filloutBase = if BaseFirstEd `elem` sets || BaseSecondEd `elem` sets
+                        then Base:sets
+                        else sets
+                    let allSets = if IntrigueFirstEd `elem` sets || IntrigueSecondEd `elem` sets
+                        then Intrigue:filloutBase
+                        else filloutBase
+                    let setsQuery = if null sets
+                                        then []
+                                        else [c ^. CardSet `in_` valList sets]
+                    let minCostQuery = case maybeMinCost of
+                            Nothing -> []
+                            Just minCost -> [c ^. CardCoinCost !=. val Nothing,
+                                                c ^. CardCoinCost >=. val (Just minCost)]
+                    let maxCostQuery = case maybeMaxCost of
+                            Nothing -> []
+                            Just minCost -> [c ^. CardCoinCost !=. val Nothing,
+                                                c ^. CardCoinCost >=. val (Just minCost)]
+                    let potionQuery = case maybeNeedsPotion of
+                            Nothing -> []
+                            Just needsPotion -> [c ^. CardPotionCost ==. val (Just needsPotion)]
+                    let debtQuery = case maybeNeedsDebt of
+                            Nothing -> []
+                            Just True -> [c ^. CardDebtCost !=. val Nothing,
+                                            c ^. CardDebtCost >. val (Just 0)]
+                            Just False -> [c ^. CardDebtCost ==. val (Just 0)]
+                    let kingdomQuery = if mustBeKingdom then [c ^. CardIsKingdom ==.val  True] else []
+                    let nonTerminalQuery = case maybeNonTerminal of
+                            Nothing -> []
+                            Just choice ->
+                                [c ^. CardNonTerminal `in_` valList (map Just (possibleChoices choice))]
+                    let villageQuery = case maybeVillage of
+                            Nothing -> []
+                            Just choice ->
+                                [c ^. CardGivesExtraActions `in_` valList (map Just (possibleChoices choice))]
+                    let noHandSizeReductionQuery = case maybeNoHandsizeReduction of
+                            Nothing -> []
+                            Just choice ->
+                                [c ^. CardReturnsCard `in_` valList (map Just (possibleChoices choice))]
+                    let drawsQuery = case maybeDraws of
+                            Nothing -> []
+                            Just choice ->
+                                [c ^. CardExtraBuy `in_` valList (map Just (possibleChoices choice))]
+                    let trashQuery = if mustTrash then [c ^. CardTrashes ==. val True] else []
+                    let extraBuyQuery = case maybeExtraBuy of
+                            Nothing -> []
+                            Just choice ->
+                                [c ^. CardExtraBuy `in_` valList (map Just (possibleChoices choice))]
+                    let typesQuery = if null types
+                                        then []
+                                        else [t ^. TypeName `in_` valList types]
+                    let linksQuery = if null links
+                                        then []
+                                        else [c1 ?. CardName `in_` valList (map Just links)]
+                    let queries = setsQuery ++ minCostQuery ++ maxCostQuery ++ potionQuery
+                            ++ debtQuery ++ kingdomQuery ++ nonTerminalQuery
+                            ++ villageQuery ++ noHandSizeReductionQuery
+                            ++ drawsQuery ++ trashQuery ++ typesQuery ++ linksQuery
+                    forM_ queries where_
+                    on (c1 ?. CardId ==. lp ?. LinkPairsCardTwo)
+                    on (lp ?. LinkPairsCardOne ==. just (c ^. CardId))
+                    on (t ^. TypeId ==. tc ^. TypeCardTypeId)
+                    on (c ^. CardId ==. tc ^. TypeCardCardId)
+                    return (c, t, c1)
+            return $ foldr merge [] sqlres
+                where
+                    resolveCard c t (Just c1) = CardWithTypesAndLinks (entityVal c) [typeName . entityVal $ t]
+                        [cardName . entityVal $ c1]
+                    resolveCard c t Nothing = CardWithTypesAndLinks (entityVal c) [typeName . entityVal $ t] []    
+                    mergeCards (c, t, Just c1) (CardWithTypesAndLinks card types links)
+                        = CardWithTypesAndLinks card (typeName (entityVal  t) : types)
+                            (cardName (entityVal c1) : links)
+                    mergeCards (c, t, Nothing) (CardWithTypesAndLinks card types links)
+                        = CardWithTypesAndLinks card (typeName (entityVal  t) : types) links
+                    merge (c, t, c1) [] = [resolveCard c t c1]
+                    merge (c, t, c1) (cd@(CardWithTypesAndLinks card _ _) : cs)
+                        | cardName (entityVal c) == cardName card
+                            = mergeCards (c, t, c1) cd : cs
+                        | otherwise = cd : merge (c, t, c1) cs
 
 
 getSets :: Handler [Set]
@@ -178,96 +215,69 @@ insertCard :: CardWithTypesAndLinks -> Handler ()
 insertCard (CardWithTypesAndLinks baseCard types links) =
     liftIO . runDBActions $ do
         runMigration migrateAll
-        cardId <- insert baseCard
-        -- insert linked cards, "both ways". First insert them directly for the card under consideration
-        maybeLinkedIds <- forM links $ \cardName -> do
-            maybeCard <- selectFirst [CardName ==. cardName] []
+        cardId <- P.insert baseCard
+        -- insert linked cards
+        forM links $ \cardName -> do
+            maybeCard <- P.selectFirst [CardName P.==. cardName] []
             case maybeCard of
-                Nothing -> return Nothing -- if no card exists with the give name, we'll just ignore it
+                Nothing -> return () -- if no card exists with the give name, we'll just ignore it
                 -- (would be better to throw an error, but this is simpler, and will only affect me
                 -- so I don't have to expend too much effort on being user-friendly!)
                 Just card -> do
-                    -- also make sure, for each of the linked cards that exist,
-                    -- that the given card is added to its set of links
-                    maybeCardWithLinks <- selectFirst [CardLinksCardId ==. entityKey card] []
-                    case maybeCardWithLinks of
-                        Nothing -> return ()
-                        Just cardWithLinks ->
-                            let alreadyLinked = cardLinksLinkedCards (entityVal cardWithLinks) in
-                            if cardId `elem` alreadyLinked
-                                then return () -- already there, nothing to do
-                                else do
-                                    delete (entityKey cardWithLinks)
-                                    insert $ CardLinks (cardLinksCardId . entityVal $ cardWithLinks)
-                                        (cardId : alreadyLinked)
-                                    return ()
-                    return . Just . entityKey $ card
-        insert $ CardLinks cardId $ catMaybes maybeLinkedIds
+                    P.insert (LinkPairs cardId (entityKey card))
+                    return ()
         forM_ types $ \typeName -> do
             -- check if the type already exists in the Type table.
             -- if not, insert it. In either case, insert the card/type many-to-many info
-            maybeType <- selectFirst [TypeName ==. typeName] []
+            maybeType <- P.selectFirst [TypeName P.==. typeName] []
             case maybeType of
-                Just typeId -> insert $ TypeCard cardId $ entityKey typeId
+                Just typeId -> P.insert $ TypeCard cardId $ entityKey typeId
                 Nothing -> do
-                    typeId <- insert (Type typeName)
-                    insert $ TypeCard cardId typeId
+                    typeId <- P.insert (Type typeName)
+                    P.insert $ TypeCard cardId typeId
 
 
 updateCard :: Text -> CardWithTypesAndLinks -> Handler ()
--- similar adjustments needed here
 updateCard name (CardWithTypesAndLinks baseCard types links) = liftIO . runDBActions $ do
-    existingCard <- selectFirst [CardName ==. name] []
+    existingCard <- P.selectFirst [CardName P.==. name] []
     case existingCard of
         Just oldCard -> do
             Database.Persist.Postgresql.replace (entityKey oldCard) baseCard
             -- for simplicity, although it's obviously less efficient, let's
             -- just delete all previous types for the card, and re-add the new ones
-            typeCards <- selectList [TypeCardCardId ==. entityKey oldCard] []
-            forM_ (entityKey <$> typeCards) delete
+            typeCards <- P.selectList [TypeCardCardId P.==. entityKey oldCard] []
+            forM_ (entityKey <$> typeCards) P.delete
             forM_ types $ \typeName -> do
                 -- do same as when inserting, check if the type already exists
-                maybeType <- selectFirst [TypeName ==. typeName] []
+                maybeType <- P.selectFirst [TypeName P.==. typeName] []
                 case maybeType of
                     Just typeId -> insert $ TypeCard (entityKey oldCard) (entityKey typeId)
                     Nothing -> do
                         typeId <- insert (Type typeName)
                         insert $ TypeCard (entityKey oldCard) typeId
-            -- same with the links. Need to delete the linked card record and insert whatever is provided
-            linkedCards <- forM links $ \linkName -> selectFirst [CardName ==. linkName] []
-            maybeLinkRecord <- selectFirst [CardLinksCardId ==. entityKey oldCard] []
-            case maybeLinkRecord of
-                Nothing -> return ()
-                Just linkRecord -> do
-                    delete $ entityKey linkRecord
-                    insert $ CardLinks (cardLinksCardId . entityVal $ linkRecord)
-                        (entityKey <$> catMaybes linkedCards)
-                    return ()
-            -- note, if the update removes cards from the linked list, this doesn't reciprocally remove the
-            -- updated card from those cards linked-lists. Doesn't seem critical though, might add to the
-            -- todo list.
+            -- same with the links. Need to delete the linked card records and insert whatever is provided
+            currentRecords <- P.selectList ([LinkPairsCardOne P.==. entityKey oldCard]
+                        P.||. [LinkPairsCardTwo P.==. entityKey oldCard]) []
+            forM_ (map entityKey currentRecords) P.delete
+            linkedCards <- forM links $ \linkName -> P.selectFirst [CardName P.==. linkName] []
+            let linkKeys = entityKey <$> catMaybes linkedCards
+            forM_ linkKeys $ insert . LinkPairs (entityKey oldCard)
         Nothing -> return ()
 
 
 deleteCard :: Text -> Handler ()
 deleteCard name = liftIO . runDBActions $ do
-    existingCard <- selectFirst [CardName ==. name] []
+    existingCard <- P.selectFirst [CardName P.==. name] []
     case existingCard of
         Just card -> do
             -- delete everything in the join tables
-            typeIds <- selectList [TypeCardCardId ==. entityKey card] []
-            forM_ (entityKey <$> typeIds) delete
-            linkIds <- selectList [CardLinksCardId ==. entityKey card] []
-            forM_ (entityKey <$> linkIds) delete
+            typeIds <- P.selectList [TypeCardCardId P.==. entityKey card] []
+            forM_ (entityKey <$> typeIds) P.delete
+            linkIds <- P.selectList ([LinkPairsCardOne P.==. entityKey card]
+                P.||. [LinkPairsCardTwo P.==. entityKey card])[]
+            forM_ (entityKey <$> linkIds) P.delete
             -- remove the linked card from ALL link records
-            allLinks <- selectList [] []
-            forM_ allLinks $ \linkRecord -> do
-                when (entityKey card `elem` cardLinksLinkedCards (entityVal linkRecord)) $ do
-                    delete (entityKey linkRecord)
-                    insert $ CardLinks (cardLinksCardId $ entityVal linkRecord)
-                        $ L.delete (entityKey card) $ cardLinksLinkedCards (entityVal linkRecord)
-                    return ()
-            delete (entityKey card)
+            P.delete (entityKey card)
         Nothing -> return ()
 
 

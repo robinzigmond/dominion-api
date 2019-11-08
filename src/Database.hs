@@ -73,6 +73,7 @@ Card
     givesExtraActions CanDoIt Maybe
     returnsCard CanDoIt Maybe
     increasesHandSize CanDoIt Maybe
+    extraBuy CanDoIt Maybe
     trashes Bool
 Type json
     name CardType
@@ -80,8 +81,8 @@ TypeCard
     cardId CardId
     typeId TypeId
     UniqueTypeCard cardId typeId
-CardLinks
-    cardId CardId
-    linkedCards [CardId]
-    UniqueCardLinks cardId
+LinkPairs
+    cardOne CardId
+    cardTwo CardId
+    UniqueLinkPairs cardOne cardTwo
 |]

@@ -36,6 +36,7 @@ dependencies:
 - http-api-data
 - casing
 - bytestring
+- esqueleto
 
 library:
   source-dirs: src

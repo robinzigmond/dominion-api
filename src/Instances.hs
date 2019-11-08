@@ -33,6 +33,7 @@ instance FromJSON Card where
         <*> v .:? "extra-actions"
         <*> v .:? "returns-card"
         <*> v .:? "increase-hand-size"
+        <*> v .:? "extra-buy"
         <*> v .: "trashes"
         where potionCost = do
                 maybePotion <- v .:? "potion-cost" :: Parser (Maybe Bool)
@@ -55,7 +56,7 @@ instance FromJSON Card where
 
 instance ToJSON Card where
     toJSON (Card name set coinCost potionCost debtCost mainText otherText isKingdom nonTerminal
-            extraActions returnsCard increaseHandSize trashes)
+            extraActions returnsCard increaseHandSize trashes extraBuy)
         = object ["name" .= name,
                   "set" .= set,
                   "coin-cost" .= coinCost,
@@ -68,7 +69,8 @@ instance ToJSON Card where
                   "extra-actions" .= extraActions,
                   "returns-card" .= returnsCard,
                   "increase-hand-size" .= increaseHandSize,
-                  "trashes" .= trashes
+                  "trashes" .= trashes,
+                  "extra-buy" .= extraBuy
                   ]
 
 
