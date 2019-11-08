@@ -176,8 +176,8 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
                                         else [c1 ?. CardName `in_` valList (map Just links)]
                     let queries = setsQuery ++ minCostQuery ++ maxCostQuery ++ potionQuery
                             ++ debtQuery ++ kingdomQuery ++ nonTerminalQuery
-                            ++ villageQuery ++ noHandSizeReductionQuery
-                            ++ drawsQuery ++ trashQuery ++ typesQuery ++ linksQuery
+                            ++ villageQuery ++ noHandSizeReductionQuery ++ drawsQuery
+                            ++ trashQuery ++ extraBuyQuery ++ typesQuery ++ linksQuery
                     forM_ queries where_
                     on (c1 ?. CardId ==. lp ?. LinkPairsCardTwo)
                     on (lp ?. LinkPairsCardOne ==. just (c ^. CardId))
