@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeOperators #-}
 
@@ -14,7 +13,6 @@ import Database.Esqueleto
 import qualified Database.Persist as P
 import Database.Persist.Sql (runMigration)
 import Database.Persist.Postgresql (replace)
-import Network.Wai
 import Servant
 
 import Database
@@ -308,7 +306,3 @@ server = getAllCards
 
 dominionAPI :: Proxy DominionAPI
 dominionAPI = Proxy
-
-
-api :: Application
-api = serveWithContext dominionAPI authContext server

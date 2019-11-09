@@ -2,7 +2,7 @@ module Main where
 
 import Network.Wai.Handler.Warp
 
-import Api (api)
+import Docs (api)
 
 main :: IO ()
 main = run 8000 api

@@ -37,6 +37,8 @@ dependencies:
 - casing
 - bytestring
 - esqueleto
+- servant-docs
+- http-types
 
 library:
   source-dirs: src
