@@ -13,6 +13,6 @@ I hope it will be useful but the main motivation for this is, after a year or so
 At the time of writing,the basic API functionality appears to be working but there is still plenty to do before this will be ready to deploy to a production environment. The following is what I expect to be an ever-changing (and hopefully generally decreasing!) list of things still to do:
 
 
-- Tidy up documentation considerably. (Render as HTML, remove sections on authenticated routes, improve wording.)
+- Tidy up documentation considerably. (Remove sections on authenticated routes, improve wording/layout etc.)
 - Add tests!
 - make any error messages (eg. requests for a card name that doesn't exist) return them as JSON via an "error" key or similar

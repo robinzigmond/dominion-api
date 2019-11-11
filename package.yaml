@@ -39,6 +39,11 @@ dependencies:
 - esqueleto
 - servant-docs
 - http-types
+- cmark
+- http-media
+- lens
+- base-compat
+- string-conversions
 
 library:
   source-dirs: src

@@ -1,19 +1,32 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeOperators #-}
 
 module Docs where
 
-import Data.ByteString.Lazy (ByteString)
-import Data.Text (Text)
-import Data.Text.Lazy.Encoding (encodeUtf8)
-import Data.Text.Lazy (pack)
+import CMark (commonmarkToHtml)
+import Control.Lens ((^.), (%~), mapped, view)
+import qualified Data.ByteString.Char8 as BSC
+import Data.ByteString.Lazy (ByteString, fromStrict)
+import Data.Foldable (fold)
+import qualified Data.HashMap.Strict as HM
+import Data.List.Compat (intercalate, intersperse, sort)
+import Data.List.NonEmpty (NonEmpty ((:|)), groupWith)
+import qualified Data.List.NonEmpty as NE
+import Data.Maybe (isJust)
+import Data.String.Conversions (cs)
+import Data.Text (Text, unpack)
+import qualified Data.Text as T
+import Data.Text.Encoding (encodeUtf8)
+import Data.Text.Lazy (pack, toStrict)
+import qualified Network.HTTP.Media as M
 import Network.HTTP.Types
 import Network.Wai
 import Servant
 import Servant.Docs
-import Servant.Docs.Internal (ToAuthInfo(..))
+import Servant.Docs.Internal (ToAuthInfo(..), showPath)
 
 import Api (DominionAPI, dominionAPI, server, authContext)
 import Database (Card(..))
@@ -160,13 +173,197 @@ instance ToAuthInfo (BasicAuth "dominion" ()) where
 
 
 apiDocs :: ByteString
-apiDocs = encodeUtf8
-            . pack
-            . markdown
-            $ docsWithIntros [intro] dominionAPI
+apiDocs = fromStrict . encodeUtf8 . fitOnPage . commonmarkToHtml [] . toStrict . pack
+            . markdownCustom $ docsWithIntros [intro] dominionAPI
 
-  where intro = DocIntro "Dominion API"
+    where intro = DocIntro "Dominion API - Documentation"
             ["This API allows users to find out information about the many Dominion cards."]
+          fitOnPage = T.replace "<code" "<code style=\"white-space: normal\";"
+
+
+-- my own custom version of the markdown function from the original Servant.Docs.Internal module,
+-- which I started from but have edited to fit my needs better, mainly to remove irrelevant info
+markdownCustom :: API -> String
+markdownCustom api = unlines $
+        introsStr (api ^. apiIntros)
+    ++ (concatMap (uncurry printEndpoint) . sort . HM.toList $ api ^. apiEndpoints)
+
+    where
+        printEndpoint :: Endpoint -> Action -> [String]
+        printEndpoint endpoint action =
+            str :
+            "" :
+            notesStr (action ^. notes) ++
+            authStr (action ^. authInfo) ++
+            capturesStr (action ^. captures) ++
+            paramsStr meth (action ^. params) ++
+            rqbodyStr (action ^. rqtypes) (action ^. rqbody) ++
+            responseStr (action ^. response) ++
+            []
+
+            where str = "## " ++ BSC.unpack meth
+                    ++ " " ++ showPath (endpoint^.path)
+
+                  meth = endpoint ^. method
+
+        introsStr :: [DocIntro] -> [String]
+        introsStr = concatMap introStr
+
+        introStr :: DocIntro -> [String]
+        introStr i =
+            ("# " ++ i ^. introTitle) :
+            "" :
+            intersperse "" (i ^. introBody) ++
+            "" :
+            []
+
+        notesStr :: [DocNote] -> [String]
+        notesStr = addHeading
+                    . concatMap noteStr
+            where
+            addHeading nts = maybe nts (\hd -> ("### " ++ hd) : "" : nts) Nothing
+
+        noteStr :: DocNote -> [String]
+        noteStr nt =
+            (hdr ++ nt ^. noteTitle) :
+            "" :
+            intersperse "" (nt ^. noteBody) ++
+            "" :
+            []
+            where
+            hdr = "### "
+
+        authStr :: [DocAuthentication] -> [String]
+        authStr [] = []
+        authStr auths =
+            let authIntros = mapped %~ view authIntro $ auths
+                clientInfos = mapped %~ view authDataRequired $ auths
+            in "### Authentication":
+                "":
+                unlines authIntros :
+                "":
+                "Clients must supply the following data" :
+                unlines clientInfos :
+                "" :
+                []
+
+        capturesStr :: [DocCapture] -> [String]
+        capturesStr [] = []
+        capturesStr l =
+            "### Captures:" :
+            "" :
+            map captureStr l ++
+            "" :
+            []
+
+        captureStr cap =
+            "- *" ++ (cap ^. capSymbol) ++ "*: " ++ (cap ^. capDesc)
+
+        headersStr :: [Text] -> [String]
+        headersStr [] = []
+        headersStr l =
+            "### Headers:" :
+            "" :
+            map headerStr l ++
+            "" :
+            []
+
+            where headerStr hname = "- This endpoint is sensitive to the value of the **"
+                                ++ unpack hname ++ "** HTTP header."
+
+        paramsStr :: Method -> [DocQueryParam] -> [String]
+        paramsStr _ [] = []
+        paramsStr m l =
+            ("### " ++ cs m ++ " Parameters:") :
+            "" :
+            map (paramStr m) l ++
+            "" :
+            []
+
+        paramStr m param = unlines $
+            ("- " ++ param ^. paramName) :
+            (if (not (null values) || param ^. paramKind /= Flag)
+            then ["     - **Example Values**: *" ++ intercalate ", " values ++ "*"]
+            else []) ++
+            ("     - **Description**: " ++ param ^. paramDesc) :
+            (if (param ^. paramKind == List)
+            then ["     - This parameter is a **list**. All " ++ cs m ++ " parameters with the name *"
+                    ++ param ^. paramName ++ "* will forward their values in a list to the handler."]
+            else []) ++
+            (if (param ^. paramKind == Flag)
+            then ["     - This parameter is a **flag**. This means no value is expected to be associated to this parameter."]
+            else []) ++
+            []
+
+            where values = param ^. paramValues
+
+        rqbodyStr :: [M.MediaType] -> [(Text, M.MediaType, ByteString)]-> [String]
+        rqbodyStr [] [] = []
+        rqbodyStr types s =
+            ["### Request:", ""]
+            <> formatTypes types
+            <> formatBodies FirstContentType s
+
+        formatTypes [] = []
+        formatTypes ts = ["- Supported content types are:", ""]
+            <> map (\t -> "    - `" <> show t <> "`") ts
+            <> [""]
+
+        -- This assumes that when the bodies are created, identical
+        -- labels and representations are located next to each other.
+        formatBodies :: ShowContentTypes -> [(Text, M.MediaType, ByteString)] -> [String]
+        formatBodies ex bds = concatMap formatBody (select bodyGroups)
+            where
+            bodyGroups :: [(Text, NonEmpty M.MediaType, ByteString)]
+            bodyGroups =
+                map (\grps -> let (t,_,b) = NE.head grps in (t, fmap (\(_,m,_) -> m) grps, b))
+                . groupWith (\(t,_,b) -> (t,b))
+                $ bds
+
+            select = case ex of
+                        AllContentTypes  -> id
+                        FirstContentType -> map (\(t,ms,b) -> (t, NE.head ms :| [], b))
+
+        formatBody :: (Text, NonEmpty M.MediaType, ByteString) -> [String]
+        formatBody (t, ms, b) =
+            "- " <> title <> " (" <> mediaList ms <> "):" :
+            contentStr (NE.head ms) b
+            where
+            mediaList = fold . NE.intersperse ", " . fmap (\m -> "`" ++ show m ++ "`")
+
+            title
+                | T.null t  = "Example"
+                | otherwise = cs t
+
+        markdownForType mime_type =
+            case (M.mainType mime_type, M.subType mime_type) of
+                ("text", "html") -> "html"
+                ("application", "xml") -> "xml"
+                ("text", "xml") -> "xml"
+                ("application", "json") -> "javascript"
+                ("application", "javascript") -> "javascript"
+                ("text", "css") -> "css"
+                (_, _) -> ""
+
+
+        contentStr mime_type body =
+            "" :
+            "```" <> markdownForType mime_type :
+            cs body :
+            "```" :
+            "" :
+            []
+
+        responseStr :: Servant.Docs.Response -> [String]
+        responseStr resp =
+            "### Response:" :
+            bodies
+
+            where bodies = case resp ^. respBody of
+                    []        -> ["- No response body\n"]
+                    [("", t, r)] -> "- Response body as below." : contentStr t r
+                    xs        ->
+                        formatBodies AllContentTypes xs
 
 
 type DominionAPIWithDocs = DominionAPI :<|> Raw
@@ -180,7 +377,7 @@ server :: Server DominionAPIWithDocs
 server = Api.server :<|> Tagged serveDocs
     where
         serveDocs _ respond =
-            respond $ responseLBS ok200 [("Content-Type", "text/plain")] apiDocs
+            respond $ responseLBS ok200 [("Content-Type", "text/html")] apiDocs
 
 
 api :: Application
