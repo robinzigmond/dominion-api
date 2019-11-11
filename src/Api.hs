@@ -4,15 +4,11 @@
 
 module Api where
 
-import Control.Monad (forM, forM_)
+import Control.Monad (forM_)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson
-import Data.Maybe (catMaybes)
-import Data.Text hiding (map, concat, null, foldr, head, filter)
+import Data.Text hiding (map, null, foldr)
 import Database.Esqueleto
-import qualified Database.Persist as P
-import Database.Persist.Sql (runMigration)
-import Database.Persist.Postgresql (replace)
 import Servant
 
 import Database
@@ -20,20 +16,7 @@ import Instances
 import SubsidiaryTypes
 
 
-authCheck :: BasicAuthCheck ()
-authCheck = BasicAuthCheck $ \(BasicAuthData username password) -> do
-    theUsername <- readEnv "dominionAdminUser"
-    thePassword <- readEnv "dominionAdminPassword"
-    return $ if username == theUsername && password == thePassword
-        then Authorized ()
-        else Unauthorized
-
-
-authContext :: Context (BasicAuthCheck () ': '[])
-authContext = authCheck :. EmptyContext
-
-
-type DominionAPI = "cards" :> Get '[JSON] [CardWithTypesAndLinks]
+type PublicAPI = "cards" :> Get '[JSON] [CardWithTypesAndLinks]
                     :<|> "cards" :> "filter" :> QueryParams "set" Set
                         :> QueryParam "min-coin-cost" Int
                         :> QueryParam "max-coin-cost" Int :> QueryParam "has-potion" Bool
@@ -48,14 +31,7 @@ type DominionAPI = "cards" :> Get '[JSON] [CardWithTypesAndLinks]
                     :<|> "cards" :> Capture "card-name" Text :> Get '[JSON] CardWithTypesAndLinks
                     :<|> "sets" :> Get '[JSON] [Set]
                     :<|> "types" :> Get '[JSON] [CardType]
-                    :<|> BasicAuth "dominion" () :> (
-                        "cards" :> "new" :> ReqBody '[JSON] CardWithTypesAndLinks
-                            :> PostNoContent '[JSON] NoContent
-                        :<|> "cards" :> "update" :> Capture "card-name" Text
-                            :> ReqBody '[JSON] CardWithTypesAndLinks :> PutNoContent '[JSON] NoContent
-                        :<|> "cards" :> "delete" :> Capture "card-name" Text
-                            :> DeleteNoContent '[JSON] NoContent
-                    )
+
 
 
 getAllCards :: Handler [CardWithTypesAndLinks]
@@ -207,83 +183,6 @@ getTypes :: Handler [CardType]
 getTypes = return [minBound..maxBound]
 
 
-insertCard :: CardWithTypesAndLinks -> Handler ()
-insertCard (CardWithTypesAndLinks baseCard types links) =
-    liftIO . runDBActions $ do
-        runMigration migrateAll
-        cardId <- P.insert baseCard
-        -- insert linked cards
-        forM links $ \cardName -> do
-            maybeCard <- P.selectFirst [CardName P.==. cardName] []
-            case maybeCard of
-                Nothing -> return () -- if no card exists with the give name, we'll just ignore it
-                -- (would be better to throw an error, but this is simpler, and will only affect me
-                -- so I don't have to expend too much effort on being user-friendly!)
-                Just card -> do
-                    P.insert (LinkPairs cardId (entityKey card))
-                    P.insert (LinkPairs (entityKey card) cardId)
-                    return ()
-        forM_ types $ \typeName -> do
-            -- check if the type already exists in the Type table.
-            -- if not, insert it. In either case, insert the card/type many-to-many info
-            maybeType <- P.selectFirst [TypeName P.==. typeName] []
-            case maybeType of
-                Just typeId -> P.insert $ TypeCard cardId $ entityKey typeId
-                Nothing -> do
-                    typeId <- P.insert (Type typeName)
-                    P.insert $ TypeCard cardId typeId
-
-
-updateCard :: Text -> CardWithTypesAndLinks -> Handler ()
-updateCard name (CardWithTypesAndLinks baseCard types links) = liftIO . runDBActions $ do
-    existingCard <- P.selectFirst [CardName P.==. name] []
-    case existingCard of
-        Just oldCard -> do
-            Database.Persist.Postgresql.replace (entityKey oldCard) baseCard
-            -- for simplicity, although it's obviously less efficient, let's
-            -- just delete all previous types for the card, and re-add the new ones
-            typeCards <- P.selectList [TypeCardCardId P.==. entityKey oldCard] []
-            forM_ (entityKey <$> typeCards) P.delete
-            forM_ types $ \typeName -> do
-                -- do same as when inserting, check if the type already exists
-                maybeType <- P.selectFirst [TypeName P.==. typeName] []
-                case maybeType of
-                    Just typeId -> insert $ TypeCard (entityKey oldCard) (entityKey typeId)
-                    Nothing -> do
-                        typeId <- insert (Type typeName)
-                        insert $ TypeCard (entityKey oldCard) typeId
-            -- same with the links. Need to delete the linked card records and insert whatever is provided
-            currentRecords <- P.selectList ([LinkPairsCardOne P.==. entityKey oldCard]
-                        P.||. [LinkPairsCardTwo P.==. entityKey oldCard]) []
-            forM_ (map entityKey currentRecords) P.delete
-            linkedCards <- forM links $ \linkName -> P.selectFirst [CardName P.==. linkName] []
-            let linkKeys = entityKey <$> catMaybes linkedCards
-            forM_ linkKeys $ \linked -> do
-                insert $ LinkPairs (entityKey oldCard) linked
-                insert $ LinkPairs linked (entityKey oldCard)
-        Nothing -> return ()
-
-
-deleteCard :: Text -> Handler ()
-deleteCard name = liftIO . runDBActions $ do
-    existingCard <- P.selectFirst [CardName P.==. name] []
-    case existingCard of
-        Just card -> do
-            -- delete everything in the join tables
-            typeIds <- P.selectList [TypeCardCardId P.==. entityKey card] []
-            forM_ (entityKey <$> typeIds) P.delete
-            linkIds <- P.selectList ([LinkPairsCardOne P.==. entityKey card]
-                P.||. [LinkPairsCardTwo P.==. entityKey card])[]
-            forM_ (entityKey <$> linkIds) P.delete
-            -- finally remove the deleted card itself
-            P.delete (entityKey card)
-        Nothing -> return ()
-
-
-doWithNoContent :: Handler () -> Handler NoContent
-doWithNoContent act = act >> return NoContent
-
-
 handlerWithError :: Handler (Maybe CardWithTypesAndLinks) -> Handler CardWithTypesAndLinks
 handlerWithError hdlr = do
     maybeCard <- hdlr
@@ -292,17 +191,13 @@ handlerWithError hdlr = do
         Nothing -> throwError $ err404 { errBody = "couldn't find a card of that name" }
 
 
-server :: Server DominionAPI
+server :: Server PublicAPI
 server = getAllCards
             :<|> getFilteredCards
             :<|> handlerWithError . getOneCard
             :<|> getSets
             :<|> getTypes
-            :<|> (\_ -> doWithNoContent . insertCard
-                :<|> (doWithNoContent .) . updateCard
-                :<|> doWithNoContent . deleteCard
-            )
 
 
-dominionAPI :: Proxy DominionAPI
-dominionAPI = Proxy
+publicAPI :: Proxy PublicAPI
+publicAPI = Proxy

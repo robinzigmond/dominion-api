@@ -28,7 +28,7 @@ import Servant
 import Servant.Docs
 import Servant.Docs.Internal (ToAuthInfo(..), showPath)
 
-import Api (DominionAPI, dominionAPI, server, authContext)
+import Api (PublicAPI, publicAPI, server)
 import Database (Card(..))
 import Instances
 import SubsidiaryTypes
@@ -167,14 +167,9 @@ instance ToSample CardType where
     toSamples _ = singleSample Reaction
 
 
-instance ToAuthInfo (BasicAuth "dominion" ()) where
-    toAuthInfo _ = DocAuthentication "" "" -- dummy instance for now, so it compiles
-    -- ultimately I don't want these "private" routes documented at all!
-
-
 apiDocs :: ByteString
 apiDocs = fromStrict . encodeUtf8 . fitOnPage . commonmarkToHtml [] . toStrict . pack
-            . markdownCustom $ docsWithIntros [intro] dominionAPI
+            . markdownCustom $ docsWithIntros [intro] publicAPI
 
     where intro = DocIntro "Dominion API - Documentation"
             ["This API allows users to find out information about the many Dominion cards."]
@@ -366,19 +361,17 @@ markdownCustom api = unlines $
                         formatBodies AllContentTypes xs
 
 
-type DominionAPIWithDocs = DominionAPI :<|> Raw
+type PublicAPIWithDocs = PublicAPI :<|> Raw
 
 
-dominionAPIWithDocs :: Proxy DominionAPIWithDocs
-dominionAPIWithDocs = Proxy
+publicAPIWithDocs :: Proxy PublicAPIWithDocs
+publicAPIWithDocs = Proxy
 
 
-server :: Server DominionAPIWithDocs
+server :: Server PublicAPIWithDocs
 server = Api.server :<|> Tagged serveDocs
     where
         serveDocs _ respond =
             respond $ responseLBS ok200 [("Content-Type", "text/html")] apiDocs
 
 
-api :: Application
-api = serveWithContext dominionAPIWithDocs authContext Docs.server
