@@ -8,6 +8,8 @@ module Docs where
 
 import CMark (commonmarkToHtml)
 import Control.Lens ((&), (^.), (%~), (<>~), mapped, view)
+import Data.Aeson
+import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BSC
 import Data.ByteString.Lazy (ByteString, fromStrict)
 import Data.Foldable (fold)
@@ -38,7 +40,12 @@ instance ToParam (QueryParams "set" Set) where
     toParam _ =
         DocQueryParam "set"
             ["base", "intrigue-first-ed", "seaside", "dark-ages"]
-            "Name of one or more sets to restrict cards to."
+            ("Name of one or more sets to restrict cards to. Note that we distinguish the first " <>
+            "and second editions of the Base set and Intrigue: \"base-first-ed\" returns all " <>
+            "cards in the first edition of the Base set, similarly for \"base-second-ed\", while " <>
+            "just \"base\" gives back only those cards found in both editions, if that is desired. " <>
+            "Multiple sets given together combine as OR (of course), so just include both the first " <>
+            "edition and the second if you care about all cards from both editions." )
             List
 
 
@@ -53,7 +60,7 @@ instance ToParam (QueryParam "min-coin-cost" Int) where
 instance ToParam (QueryParam "max-coin-cost" Int) where
     toParam _ =
         DocQueryParam "max-coin-cost"
-            ["0", "2", "6", "9"]
+            ["0", "3", "5", "8"]
             "Restrict cards to those where the coin component of the cost is no more than this much."
             Normal
 
@@ -62,7 +69,8 @@ instance ToParam (QueryParam "has-potion" Bool) where
     toParam _ =
         DocQueryParam "has-potion"
             ["true", "false"]
-            "Restrict cards to those whose cost either includes, or doesn't include, a potion."
+            ("Restrict cards to those whose cost either includes, or doesn't include, a potion. " <>
+            "(These are only found in the Alchemy set.)")
             Normal
 
 
@@ -70,7 +78,8 @@ instance ToParam (QueryParam "has-debt" Bool) where
     toParam _ =
         DocQueryParam "has-debt"
             ["true", "false"]
-            "Restrict cards to those whose cost either includes, or doesn't include, a debt component."
+            ("Restrict cards to those whose cost either includes, or doesn't include, a debt component. " <>
+            "(These are only found in the Empires set.)")
             Normal
 
 
@@ -86,7 +95,10 @@ instance ToParam (QueryParam "nonterminal" CanDoItQueryChoice) where
     toParam _ =
         DocQueryParam "nonterminal"
             ["sometimes", "always"]
-            "Restrict cards to kingdom cards which can, or are guaranteed to, be nonterminal. (That is, have no net cost in actions.)"
+            ("Restrict cards to those which can, or are guaranteed to, be nonterminal. " <>
+            "(That is, have no net cost in actions.) Note that any effects on subsequent turns " <>
+            "(eg from Duration cards) are ignored, this only refers to what could happen on " <>
+            "the turn the card is played.")
             Normal
 
 
@@ -94,7 +106,9 @@ instance ToParam (QueryParam "village" CanDoItQueryChoice) where
     toParam _ =
         DocQueryParam "village"
             ["sometimes", "always"]
-            "Restrict cards to kingdom cards which can, or are guaranteed to, result in a net gain of actions."
+            ("Restrict cards to those which can, or are guaranteed to, result in a net gain of " <>
+            "actions. Note that any effects on subsequent turns (eg from Duration cards) are ignored, " <>
+            "this only refers to what could happen on the turn the card is played.")
             Normal
 
 
@@ -102,7 +116,12 @@ instance ToParam (QueryParam "no-reduce-hand-size" CanDoItQueryChoice) where
     toParam _ =
         DocQueryParam "no-reduce-hand-size"
             ["sometimes", "always"]
-            "Restrict cards to kingdom cards which can, or are guaranteed to, lead to no net reduction in hand-size. (Note: \"guaranteed\" excludes the case where there are not enough cards left in your deck and discard to draw.)"
+            ("Restrict cards to those which can, or are guaranteed to, lead to no " <>
+            "net reduction in hand-size. (Note: no card is \"guaranteed\" to draw cards at " <>
+            "all times, because there can be not enough cards left in your deck and discard " <>
+            "to draw - these cases are not considered when deciding that a card is will \"always\"" <>
+            "fit this category.) Note that any effects on subsequent turns (eg from Duration cards) " <>
+            "are ignored, this only refers to what could happen on the turn the card is played.")
             Normal
 
 
@@ -110,7 +129,12 @@ instance ToParam (QueryParam "draws" CanDoItQueryChoice) where
     toParam _ =
         DocQueryParam "draws"
             ["sometimes", "always"]
-            "Restrict cards to kingdom cards which can, or are guaranteed to, lead to a net increase in hand-size. (Note: \"guaranteed\" excludes the case where there are not enough cards left in your deck and discard to draw.)"
+            ("Restrict cards to those which can, or are guaranteed to, lead to a net " <>
+            "increase in hand-size. (Note: no card is \"guaranteed\" to draw cards at " <>
+            "all times, because there can be not enough cards left in your deck and discard " <>
+            "to draw - these cases are not considered when deciding that a card is will \"always\"" <>
+            "fit this category.) Note that any effects on subsequent turns (eg from Duration cards) " <>
+            "are ignored, this only refers to what could happen on the turn the card is played.")
             Normal
 
 
@@ -118,7 +142,13 @@ instance ToParam (QueryFlag "trasher") where
     toParam _ =
         DocQueryParam "trasher"
             []
-            "Restrict cards to those cards which can provide trashing. Note: this does not inclde cards that just trash themselves, or that trash other players' cards. This is just for cards which can lead to thinning or improving one's own deck by removing certain cards and/or replacing them with others. (Note: this includes cards like Ambassador and Island which do not strictly speaking trash, but which removes cards from the deck in other ways."
+            ("Restrict cards to those cards which can provide trashing. Note: this does not " <>
+            "include cards that just trash themselves, or that trash other players' cards. " <>
+            "This is reserved for cards which can lead to thinning or improving one's own deck by " <>
+            "removing certain cards and/or replacing them with others. (Note: this includes cards " <>
+            "like Ambassador and Island which do not strictly speaking trash, but which remove " <>
+            "cards from the deck in other ways. Native Village is not counted because, although it" <>
+            "can in theory be used to keep cards out of play, this isn't its primary use.)")
             Flag
 
 
@@ -126,7 +156,10 @@ instance ToParam (QueryParam "extra-buy" CanDoItQueryChoice) where
     toParam _ =
         DocQueryParam "extra-buys"
             ["sometimes", "always"]
-            "Restrict cards to kingdom cards which can, or are guaranteed to, give an additional Buy when played."
+            ("Restrict cards to those which can, or are guaranteed to, give an " <>
+            "additional Buy when played. Note that any effects on subsequent turns " <>
+            "(eg from Duration cards) are ignored, this only refers to what could happen " <>
+            "on the turn the card is played.")
             Normal
 
 
@@ -134,7 +167,10 @@ instance ToParam (QueryParams "type" CardType) where
     toParam _ =
         DocQueryParam "type"
             ["action", "victory", "duration", "prize"]
-            "Restrict cards to those of one or more types. (Multiples can be given, and are combined with OR rather than AND."
+            ("Restrict cards to those of one or more types. (Multiples can be given, " <>
+            "and are combined with OR rather than AND. The only way to find a card which " <>
+            "has more than one specific type is to filter on one and then inspect the " <>
+            "\"types\" array property.)")
             List
 
 
@@ -142,7 +178,14 @@ instance ToParam (QueryParams "linked" Text) where
     toParam _ =
         DocQueryParam "linked"
             ["tournament", "spoils", "gladiator", "border-guard"]
-            "Restrict cards to those which are \"linked\" to one or more of the cards whose names you specify here. \"linked\" means they are not normally in play but are if one or more of certain other cards are in play. Examples include all of the Prizes with Tournament, or Ruins with the various Ruin-giving cards in Dark Ages. Split-pile cards are also treated as pairs of linked cards. Note that all links are symmetrical - if A is linked to B then B is automatically linked to A - this has been done to make the relationships easier to think about, even if it sometimes lacks in expressivity."
+            ("Restrict cards to those which are \"linked\" to one or more of the cards whose " <>
+            "names you specify here. \"linked\" means they are not normally in play but are if " <>
+            "one or more of certain other cards are in play. Examples include all of the Prizes " <>
+            "with Tournament, or Ruins with the various Ruin-giving cards in Dark Ages. " <>
+            "Split-pile cards are also treated as pairs of linked cards. Note that all links " <>
+            "are symmetrical - if A is linked to B then B is automatically linked to A - " <>
+            "this has been done to make the relationships easier to think about, even if it " <>
+            "sometimes lacks in expressivity.")
             List
 
 
@@ -174,11 +217,60 @@ apiDocs = fromStrict . encodeUtf8 . fitOnPage . commonmarkToHtml [] . toStrict .
     where intro = [
             DocIntro "Dominion API - Documentation"
                 ["This API allows users to find out information about the many Dominion cards.",
-                "Made by Robin Zigmond, developer and occasional Dominion player - please feel " <>
-                "free to check out the [source code](https://github.com/robinzigmond/dominion-api) on Github.",
-                "(Yes, this was made in Haskell. It may not be widely used but it's still awesome.)"],
-            DocIntro "Types used by this API"
-                ["**Card** - a description of an individual card",
+                "Made by Robin Zigmond, developer and occasional (but enthusiastic, "<>
+                "although mediocre) Dominion player - please feel " <>
+                "free to check out the [source code](https://github.com/robinzigmond/dominion-api) on Github."],
+            DocIntro "Types used by this API:"
+                ["**Card** - a description of an individual card, as a JSON object. Keys are: \n" <>
+                "- `name` (string): the card's name, lower-case with hyphens as word separators\n" <>
+                "- `set` (string): the set the card is from. For Base and Intrigue, which have 2 " <>
+                "editions with different cards, a `-first-ed` or `-second-ed` suffix is used for " <>
+                "cards in only one edition, while those in both editions have no suffix.\n" <>
+                "- `coin-cost` (number): the number of coins in the card's cost. Can be " <>
+                "null for cards with no cost (eg. Landmarks) - this is different from 0 (eg Copper)\n" <>
+                "- `potion-cost` (boolean): indicates whether the cost includes a Potion or not. " <>
+                "Can be null for cards with no cost (eg. Landmarks) - this is different from false.\n" <>
+                "- `debt-cost` (number): the amount of debt in the card's cost. Can be null for " <>
+                "cards with no cost (eg. Landmarks) - this is different from 0.\n" <>
+                "- `main-text` (string): the main text on the card, above the dividing line if there is one\n" <>
+                "- `other-text` (string): the text below the dividing line on the card. Null if there " <>
+                "is no line.\n" <>
+                "- `is-kingdom` (boolean): whether the card is a Kingdom card or not\n" <>
+                "- `non-terminal` (string): whether the card leaves the number of actions remaining " <>
+                "after being played the same as before. Holds one of the three values \"always\", "<>
+                "\"sometimes\", or \"never\" - \"sometimes\" meaning the result depends on any " <>
+                "factor, including the player's choice, or the contents of players' hands and decks. " <>
+                "Is null for non-Action cards, for which this concept makes no sense.\n" <>
+                "- `extra-actions` (string): as for `non-terminal` above, but measures the stronger " <>
+                "criterion of leaving the player with *more* actions after being played than before.\n" <>
+                "- `returns-card` (string): as for `non-terminal` above, but measures hand size rather " <>
+                "than action count. Does not account for edge cases like having no cards left to draw, and " <>
+                "is likewise null for non-Actions, even though the concept might make sense for some " <>
+                "Treasures.\n" <>
+                "- `increase-hand-size` (string): as for `extra-actions` above, but measures hand size " <>
+                "rather than action count. Does not account for edge cases like having no cards left to " <>
+                "draw, and is likewise null for non-Actions, even though the concept might make sense for " <>
+                "some Treasures.\n" <>
+                "- `extra-buy` (string): as for `non-terminal` above, but refers to whether the card might " <>
+                "result in the player having an additional Buy this turn. Unlike the similar properties " <>
+                "above, this one is `true` for some Treasures. (But `null` rather than `false` for " <>
+                "Treasures which don't give an extra Buy.\n" <>
+                "- `trashes` (boolean): whether the card offers any potential to improve the quality of " <>
+                " the player's deck - usually by trashing other cards (note that trashing itself, or other " <>
+                "players' cards, does not count), but sometimes in other ways such as Ambassador or " <>
+                "Island.\n" <>
+                "- `types` (array): the list of all types that the card has\n" <>
+                "- `linked-cards` (array): the list of all cards (by name) with which the given card is " <>
+                "\"linked\". This is a little hard to define precisely, but refers to cards being in " <>
+                "play as a result solely of one or other cards also being in play. Examples include " <>
+                "the Prizes with Tournament, Spoils with the 3 Dark Ages cards that can let you gain " <>
+                "that, and many more in the later expansions.\n\n" <>
+                "Also see the descriptions of GET parameters for /cards/filter below, which mostly match " <>
+                "up with these keys.\n\n" <>
+                "Example of a card representation: \n\n`" <>
+                 (cs . encode . snd . head $ toSamples (Proxy :: Proxy CardWithTypesAndLinks)) <>
+                 "`"
+                ,
                 "**Set** - the name of one of the Dominion sets",
                 "**Type** - the name of one of the Dominion card types"]
             ]
@@ -224,7 +316,7 @@ apiDocs = fromStrict . encodeUtf8 . fitOnPage . commonmarkToHtml [] . toStrict .
             extraInfo (Proxy :: Proxy ("sets" :> Get '[JSON] [Set])) $
                 defAction & notes <>~ [DocNote "Returns"
                     ["List of all set names, in order of release (ending with \"promos\", " <>
-                    "which is not a real set but a gathering of all individual promotional cards",
+                    "which is not a real set but a gathering of all individual promotional cards).",
                     "This is a convenience endpoint provided for developers who desire an " <>
                     "up-to-date list of sets, for example to allow users of an application to " <>
                     "choose which sets they own."]]
@@ -234,8 +326,8 @@ apiDocs = fromStrict . encodeUtf8 . fitOnPage . commonmarkToHtml [] . toStrict .
             extraInfo (Proxy :: Proxy ("types" :> Get '[JSON] [CardType])) $
                 defAction & notes <>~ [DocNote "Returns"
                     ["List of all different card types which exist",
-                    "This is a convenience endpoint provided for developers who desire an " <>
-                    "up-to-date list of all types."]]
+                    "This is a convenience endpoint provided for developers of applications " <>
+                    "which need an up-to-date list of all types."]]
 
 -- my own custom version of the markdown function from the original Servant.Docs.Internal module,
 -- which I started from but have edited to fit my needs better, mainly to remove irrelevant info
@@ -355,11 +447,12 @@ markdownCustom api = unlines $
             else []) ++
             ("     - **Description**: " ++ param ^. paramDesc) :
             (if (param ^. paramKind == List)
-            then ["     - This parameter is a **list**. All " ++ cs m ++ " parameters with the name *"
-                    ++ param ^. paramName ++ "* will forward their values in a list to the handler."]
+            then ["     - This parameter is a **list**. Multiple " ++ cs m ++ " parameters with the name *"
+                    ++ param ^. paramName ++ "* can be included and all will be taken into account."]
             else []) ++
             (if (param ^. paramKind == Flag)
-            then ["     - This parameter is a **flag**. This means no value is expected to be associated to this parameter."]
+            then ["     - This parameter is a **flag**. This means no value is expected to be " <>
+            "associated to this parameter - all that matters is whether the parameter is included."]
             else []) ++
             []
 
@@ -446,5 +539,4 @@ server = Api.server :<|> Tagged serveDocs
     where
         serveDocs _ respond =
             respond $ responseLBS ok200 [("Content-Type", "text/html")] apiDocs
-
 

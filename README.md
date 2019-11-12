@@ -10,9 +10,8 @@ I hope it will be useful but the main motivation for this is, after a year or so
 
 ## Todo List
 
-At the time of writing,the basic API functionality appears to be working but there is still plenty to do before this will be ready to deploy to a production environment. The following is what I expect to be an ever-changing (and hopefully generally decreasing!) list of things still to do:
+At the time of writing, most things seem to be working well. But there are still things left to do:
 
 
-- Tidy up documentation considerably. (Remove sections on authenticated routes, improve wording/layout etc.)
 - Add tests!
 - make any error messages (eg. requests for a card name that doesn't exist) return them as JSON via an "error" key or similar
