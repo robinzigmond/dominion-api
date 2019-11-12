@@ -33,7 +33,6 @@ type PublicAPI = "cards" :> Get '[JSON] [CardWithTypesAndLinks]
                     :<|> "types" :> Get '[JSON] [CardType]
 
 
-
 getAllCards :: Handler [CardWithTypesAndLinks]
 getAllCards = liftIO . runDBActions $ do
     sqlres <- select $

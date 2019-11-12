@@ -7,7 +7,7 @@
 module Docs where
 
 import CMark (commonmarkToHtml)
-import Control.Lens ((^.), (%~), mapped, view)
+import Control.Lens ((&), (^.), (%~), (<>~), mapped, view)
 import qualified Data.ByteString.Char8 as BSC
 import Data.ByteString.Lazy (ByteString, fromStrict)
 import Data.Foldable (fold)
@@ -169,12 +169,73 @@ instance ToSample CardType where
 
 apiDocs :: ByteString
 apiDocs = fromStrict . encodeUtf8 . fitOnPage . commonmarkToHtml [] . toStrict . pack
-            . markdownCustom $ docsWithIntros [intro] publicAPI
+            . markdownCustom $ docsWith defaultDocOptions intro extras publicAPI
 
-    where intro = DocIntro "Dominion API - Documentation"
-            ["This API allows users to find out information about the many Dominion cards."]
+    where intro = [
+            DocIntro "Dominion API - Documentation"
+                ["This API allows users to find out information about the many Dominion cards.",
+                "Made by Robin Zigmond, developer and occasional Dominion player - please feel " <>
+                "free to check out the [source code](https://github.com/robinzigmond/dominion-api) on Github.",
+                "(Yes, this was made in Haskell. It may not be widely used but it's still awesome.)"],
+            DocIntro "Types used by this API"
+                ["**Card** - a description of an individual card",
+                "**Set** - the name of one of the Dominion sets",
+                "**Type** - the name of one of the Dominion card types"]
+            ]
+
           fitOnPage = T.replace "<code" "<code style=\"white-space: normal\";"
 
+          extras = extraForAllCards <> extraForFilters <> extraForOneCard
+                    <> extraForSets <> extraForTypes
+
+          extraForAllCards :: ExtraInfo PublicAPI
+          extraForAllCards =
+            extraInfo (Proxy :: Proxy ("cards" :> Get '[JSON] [CardWithTypesAndLinks])) $
+                defAction & notes <>~ [DocNote "Returns"
+                    ["Array of cards.", "Convenience endpoint to get a list of *all* cards, if desired."]]
+
+          extraForFilters :: ExtraInfo PublicAPI
+          extraForFilters =
+            extraInfo (Proxy :: Proxy (
+                "cards" :> "filter" :> QueryParams "set" Set
+                        :> QueryParam "min-coin-cost" Int
+                        :> QueryParam "max-coin-cost" Int :> QueryParam "has-potion" Bool
+                        :> QueryParam "has-debt" Bool :> QueryFlag "is-kingdom"
+                        :> QueryParam "nonterminal" CanDoItQueryChoice
+                        :> QueryParam "village" CanDoItQueryChoice
+                        :> QueryParam "no-reduce-hand-size" CanDoItQueryChoice
+                        :> QueryParam "draws" CanDoItQueryChoice :> QueryFlag "trasher"
+                        :> QueryParam "extra-buy" CanDoItQueryChoice
+                        :> QueryParams "type" CardType :> QueryParams "linked" Text
+                        :> Get '[JSON] [CardWithTypesAndLinks]
+            )) $ defAction & notes <>~ [DocNote "Returns"
+                ["Array of cards (possibly empty) which satisfy all specified filters."]]
+
+          extraForOneCard :: ExtraInfo PublicAPI
+          extraForOneCard =
+            extraInfo (Proxy :: Proxy ("cards" :> Capture "card-name" Text
+                    :> Get '[JSON] CardWithTypesAndLinks)) $
+                defAction & notes <>~ [DocNote "Returns"
+                    ["Single card, that whose name is :card-name",
+                        "Returns an error if there is no such card"]]
+
+          extraForSets :: ExtraInfo PublicAPI
+          extraForSets =
+            extraInfo (Proxy :: Proxy ("sets" :> Get '[JSON] [Set])) $
+                defAction & notes <>~ [DocNote "Returns"
+                    ["List of all set names, in order of release (ending with \"promos\", " <>
+                    "which is not a real set but a gathering of all individual promotional cards",
+                    "This is a convenience endpoint provided for developers who desire an " <>
+                    "up-to-date list of sets, for example to allow users of an application to " <>
+                    "choose which sets they own."]]
+
+          extraForTypes :: ExtraInfo PublicAPI
+          extraForTypes =
+            extraInfo (Proxy :: Proxy ("types" :> Get '[JSON] [CardType])) $
+                defAction & notes <>~ [DocNote "Returns"
+                    ["List of all different card types which exist",
+                    "This is a convenience endpoint provided for developers who desire an " <>
+                    "up-to-date list of all types."]]
 
 -- my own custom version of the markdown function from the original Servant.Docs.Internal module,
 -- which I started from but have edited to fit my needs better, mainly to remove irrelevant info
@@ -193,7 +254,7 @@ markdownCustom api = unlines $
             capturesStr (action ^. captures) ++
             paramsStr meth (action ^. params) ++
             rqbodyStr (action ^. rqtypes) (action ^. rqbody) ++
-            responseStr (action ^. response) ++
+            --responseStr (action ^. response) ++
             []
 
             where str = "## " ++ BSC.unpack meth
@@ -202,15 +263,27 @@ markdownCustom api = unlines $
                   meth = endpoint ^. method
 
         introsStr :: [DocIntro] -> [String]
-        introsStr = concatMap introStr
+        introsStr [] = []
+        introsStr (x:xs) = firstIntroStr x ++ subsidiaryIntros xs
 
-        introStr :: DocIntro -> [String]
-        introStr i =
+        subsidiaryIntros :: [DocIntro] -> [String]
+        subsidiaryIntros = concatMap introStr
+
+        firstIntroStr :: DocIntro -> [String]
+        firstIntroStr i =
             ("# " ++ i ^. introTitle) :
             "" :
             intersperse "" (i ^. introBody) ++
             "" :
             []
+
+        introStr :: DocIntro -> [String]
+        introStr i =
+            ("### " ++ i ^. introTitle) :
+            "" :
+            intersperse "" (i ^. introBody) ++
+            "" :
+                []
 
         notesStr :: [DocNote] -> [String]
         notesStr = addHeading
@@ -361,7 +434,7 @@ markdownCustom api = unlines $
                         formatBodies AllContentTypes xs
 
 
-type PublicAPIWithDocs = PublicAPI :<|> Raw
+type PublicAPIWithDocs = PublicAPI :<|> "docs" :> Raw
 
 
 publicAPIWithDocs :: Proxy PublicAPIWithDocs
