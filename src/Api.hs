@@ -7,6 +7,7 @@ module Api where
 import Control.Monad (forM_)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson
+import qualified Data.Set as S (toList, fromList)
 import Data.Text hiding (map, null, foldr)
 import Database.Esqueleto
 import Servant
@@ -42,7 +43,7 @@ getAllCards = liftIO . runDBActions $ do
             on (t ^. TypeId ==. tc ^. TypeCardTypeId)
             on (c ^. CardId ==. tc ^. TypeCardCardId)
             return (c, t, c1)
-    return $ foldr merge [] sqlres
+    return . map uniques $ foldr merge [] sqlres
         where
             resolveCard c t (Just c1) = CardWithTypesAndLinks (entityVal c) [typeName . entityVal $ t]
                 [cardName . entityVal $ c1]
@@ -57,6 +58,10 @@ getAllCards = liftIO . runDBActions $ do
                 | cardName (entityVal c) == cardName card
                     = mergeCards (c, t, c1) cd : cs
                 | otherwise = cd : merge (c, t, c1) cs
+            noRepeats :: (Ord a) => [a] -> [a]
+            noRepeats = S.toList . S.fromList
+            uniques (CardWithTypesAndLinks c ts ls)
+                = CardWithTypesAndLinks c (noRepeats ts) (noRepeats ls)
 
 
 getOneCard :: Text -> Handler (Maybe CardWithTypesAndLinks)
@@ -69,7 +74,7 @@ getOneCard name = liftIO . runDBActions $ do
             on (t ^. TypeId ==. tc ^. TypeCardTypeId)
             on (c ^. CardId ==. tc ^. TypeCardCardId)
             return (c, t, c1)
-    return $ foldr merge Nothing sqlres
+    return . fmap uniques $ foldr merge Nothing sqlres
         where merge (c, t, Just c1) Nothing
                 = Just $ CardWithTypesAndLinks (entityVal c) [typeName . entityVal $ t]
                     [cardName . entityVal $ c1]
@@ -80,6 +85,10 @@ getOneCard name = liftIO . runDBActions $ do
                     (cardName (entityVal c1) : links)
               merge (c, t, Nothing) (Just (CardWithTypesAndLinks card types links))
                 = Just $ CardWithTypesAndLinks card (typeName (entityVal  t) : types) links
+              noRepeats :: (Ord a) => [a] -> [a]
+              noRepeats = S.toList . S.fromList
+              uniques (CardWithTypesAndLinks c ts ls)
+                = CardWithTypesAndLinks c (noRepeats ts) (noRepeats ls)
 
 
 getFilteredCards :: [Set] -> Maybe Int -> Maybe Int -> Maybe Bool -> Maybe Bool
@@ -93,7 +102,8 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
         maybeDraws mustTrash maybeExtraBuy types links
         = liftIO . runDBActions $ do
             sqlres <- select $
-                from $ \(c `InnerJoin` tc `InnerJoin` t `LeftOuterJoin` lp `LeftOuterJoin` c1) -> do
+                from $ \(c `InnerJoin` tc `InnerJoin` t `LeftOuterJoin` lp `LeftOuterJoin` c1
+                        `FullOuterJoin` lp1 `FullOuterJoin` c2) -> do
                     let filloutBase = if BaseFirstEd `elem` sets || BaseSecondEd `elem` sets
                         then Base:sets
                         else sets
@@ -152,12 +162,14 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
                             ++ villageQuery ++ noHandSizeReductionQuery ++ drawsQuery
                             ++ trashQuery ++ extraBuyQuery ++ typesQuery ++ linksQuery
                     forM_ queries where_
+                    on (lp1 ?. LinkPairsCardTwo ==. c2 ?. CardId)
+                    on (lp1 ?. LinkPairsCardOne ==. lp ?. LinkPairsCardOne)
                     on (c1 ?. CardId ==. lp ?. LinkPairsCardTwo)
                     on (lp ?. LinkPairsCardOne ==. just (c ^. CardId))
                     on (t ^. TypeId ==. tc ^. TypeCardTypeId)
                     on (c ^. CardId ==. tc ^. TypeCardCardId)
-                    return (c, t, c1)
-            return $ foldr merge [] sqlres
+                    return (c, t, c2)
+            return . map uniques $ foldr merge [] sqlres
                 where
                     resolveCard c t (Just c1) = CardWithTypesAndLinks (entityVal c) [typeName . entityVal $ t]
                         [cardName . entityVal $ c1]
@@ -172,6 +184,10 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
                         | cardName (entityVal c) == cardName card
                             = mergeCards (c, t, c1) cd : cs
                         | otherwise = cd : merge (c, t, c1) cs
+                    noRepeats :: (Ord a) => [a] -> [a]
+                    noRepeats = S.toList . S.fromList
+                    uniques (CardWithTypesAndLinks c ts ls)
+                        = CardWithTypesAndLinks c (noRepeats ts) (noRepeats ls)
 
 
 getSets :: Handler [Set]

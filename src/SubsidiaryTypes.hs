@@ -19,7 +19,7 @@ data CardType = Action | Treasure | Victory | Curse | Attack | Reaction | Durati
                 | Gathering | Castle | Night | Heirloom | Fate | Doom | Spirit
                 | Zombie | Event | Landmark | Boon | Hex | State | Artifact
                 | Project
-                deriving (Eq, Show, Read, Enum, Bounded, Generic)
+                deriving (Eq, Ord, Show, Read, Enum, Bounded, Generic)
 
 derivePersistField "CardType"
 
