@@ -50,6 +50,7 @@ data Set = Base | BaseFirstEd | BaseSecondEd | Intrigue | IntrigueFirstEd
 
 derivePersistField "Set"
 
+
 instance ToJSON Set where
     toJSON = String . pack . kebab . show
 
@@ -102,6 +103,7 @@ possibleChoices CanAlways = [Always]
 
 
 data WithError a = WithError {error :: Maybe Text, result :: Maybe a} deriving (Generic)
+
 
 instance (ToJSON a) => ToJSON (WithError a) where
     toJSON (WithError Nothing r) = toJSON r

@@ -10,11 +10,12 @@ import Control.Monad (forM_)
 import Control.Monad.Error.Class (catchError)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson
-import qualified Data.ByteString.Lazy.Char8 as B (pack)
+import qualified Data.ByteString.Lazy.Char8 as B (pack, unpack)
 import qualified Data.Set as S (toList, fromList)
 import Data.Text hiding (map, null, foldr)
 import Database.Esqueleto
 import Servant
+import Web.HttpApiData (LenientData(..))
 
 import Database
 import Instances
@@ -23,22 +24,26 @@ import SubsidiaryTypes
 
 {- taken from Alp Mestanogullari's Stack Overflow answer here:
    https://stackoverflow.com/questions/51146315/servant-queryparams-parse-error
-   Not sure why Servant makes it impossible to recover from query param parsing failures,
+   Not sure why Servant by default makes it impossible to recover from query param parsing failures,
    or why the documentation seems to contain no word of this relatively simple way to fix it -}
 type RecoverableQueryParam = QueryParam' '[Optional, Lenient]
 
+type RecoverableQueryParams s a = QueryParams s (LenientData a)
+
 
 type PublicAPI = "cards" :> Get '[JSON] (WithError [CardWithTypesAndLinks])
-                    :<|> "cards" :> "filter" :> QueryParams "set" Set
+                    :<|> "cards" :> "filter" :> RecoverableQueryParams "set" Set
                         :> RecoverableQueryParam "min-coin-cost" Int
-                        :> RecoverableQueryParam "max-coin-cost" Int :> RecoverableQueryParam "has-potion" Bool
+                        :> RecoverableQueryParam "max-coin-cost" Int
+                        :> RecoverableQueryParam "has-potion" Bool
                         :> RecoverableQueryParam "has-debt" Bool :> QueryFlag "is-kingdom"
                         :> RecoverableQueryParam "nonterminal" CanDoItQueryChoice
                         :> RecoverableQueryParam "village" CanDoItQueryChoice
                         :> RecoverableQueryParam "no-reduce-hand-size" CanDoItQueryChoice
                         :> RecoverableQueryParam "draws" CanDoItQueryChoice :> QueryFlag "trasher"
                         :> RecoverableQueryParam "extra-buy" CanDoItQueryChoice
-                        :> QueryParams "type" CardType :> QueryParams "linked" Text
+                        :> RecoverableQueryParams "type" CardType
+                        :> QueryParams "linked" Text
                         :> Get '[JSON] (WithError [CardWithTypesAndLinks])
                     :<|> "cards" :> Capture "card-name" Text
                         :> Get '[JSON] (WithError CardWithTypesAndLinks)
@@ -103,14 +108,14 @@ getOneCard name = showError . handlerWithError . liftIO . runDBActions $ do
                 = CardWithTypesAndLinks c (noRepeats ts) (noRepeats ls)
 
 
-getFilteredCards :: [Set] -> Maybe (Either Text Int) -> Maybe (Either Text Int)
+getFilteredCards :: [LenientData Set] -> Maybe (Either Text Int) -> Maybe (Either Text Int)
                         -> Maybe (Either Text Bool) -> Maybe (Either Text Bool)
                         -> Bool -> Maybe (Either Text CanDoItQueryChoice)
                         -> Maybe (Either Text CanDoItQueryChoice)
                         -> Maybe (Either Text CanDoItQueryChoice)
                         -> Maybe (Either Text CanDoItQueryChoice)
                         -> Bool -> Maybe (Either Text CanDoItQueryChoice)
-                        -> [CardType] -> [Text]
+                        -> [LenientData CardType] -> [Text]
                         -> Handler (WithError [CardWithTypesAndLinks])
 getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
         mustBeKingdom maybeNonTerminal maybeVillage maybeNoHandsizeReduction
@@ -119,10 +124,14 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
             sqlres <- select $
                 from $ \(c `InnerJoin` tc `InnerJoin` t `LeftOuterJoin` lp `LeftOuterJoin` c1
                         `FullOuterJoin` lp1 `FullOuterJoin` c2) -> do
-                    let filloutBase = if BaseFirstEd `elem` sets || BaseSecondEd `elem` sets
-                        then Base:sets
-                        else sets
-                    let allSets = if IntrigueFirstEd `elem` sets || IntrigueSecondEd `elem` sets
+                    let actualSets = extract sets
+                    let actualTypes = extract types
+                    let filloutBase = if BaseFirstEd `elem` actualSets 
+                            || BaseSecondEd `elem` actualSets
+                        then Base:actualSets
+                        else actualSets
+                    let allSets = if IntrigueFirstEd `elem` actualSets
+                            || IntrigueSecondEd `elem` actualSets
                         then Intrigue:filloutBase
                         else filloutBase
                     let setsQuery = if null sets
@@ -168,7 +177,7 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
                                 [c ^. CardExtraBuy `in_` valList (map Just (possibleChoices choice))]
                     let typesQuery = if null types
                                         then []
-                                        else [t ^. TypeName `in_` valList types]
+                                        else [t ^. TypeName `in_` valList actualTypes]
                     let linksQuery = if null links
                                         then []
                                         else [c1 ?. CardName `in_` valList (map Just links)]
@@ -186,10 +195,17 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
                     return (c, t, c2)
             return . map uniques $ foldr merge [] sqlres
                 where
+                    extract :: [LenientData a] -> [a]
+                    extract [] = []
+                    extract (LenientData (Right a) : as) = a : extract as
+                    extract (_:as) = extract as
+
                     checkForError act = case checkQueryErrors [maybeMinCost, maybeMaxCost]
                             <|> checkQueryErrors [maybeNeedsPotion, maybeNeedsDebt]
                             <|> checkQueryErrors [maybeNonTerminal, maybeVillage, maybeNoHandsizeReduction,
-                                maybeDraws, maybeExtraBuy] of
+                                maybeDraws, maybeExtraBuy]
+                            <|> checkQueryErrors (Just . getLenientData <$> sets)
+                            <|> checkQueryErrors (Just . getLenientData <$> types) of
                         Just e -> throwQueryError . B.pack $ unpack e
                         Nothing -> act
 
@@ -239,8 +255,8 @@ handlerWithError hdlr = do
 
 showError :: Handler a -> Handler (WithError a)
 showError handler =
-    catchError (fmap (WithError Nothing) (fmap Just handler)) $ \e ->
-        return . flip WithError Nothing . Just . pack $ show (e :: ServerError)
+    catchError (fmap (WithError Nothing) (fmap Just handler)) $
+        return . flip WithError Nothing . Just . pack . B.unpack . errBody
 
 
 server :: Server PublicAPI

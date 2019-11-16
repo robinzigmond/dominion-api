@@ -10,8 +10,7 @@ I hope it will be useful but the main motivation for this is, after a year or so
 
 ## Todo List
 
-At the time of writing, most things seem to be working well. But there are still things left to do:
+At the time of writing, most things seem to be working well. But there are still things left to do (just one left now as far as I know - but a big and important one):
 
 
 - Add tests!
-- extend the error handling to include "bad" values for sets and types. Perhaps leave just the "errBody" as the returned error message in all cases.

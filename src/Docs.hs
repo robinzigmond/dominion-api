@@ -29,14 +29,20 @@ import Network.Wai
 import Servant
 import Servant.Docs
 import Servant.Docs.Internal (ToAuthInfo(..), showPath)
+import Web.HttpApiData (LenientData(..))
 
-import Api (PublicAPI, publicAPI, server, RecoverableQueryParam)
+import Api (PublicAPI, publicAPI, server, RecoverableQueryParam, RecoverableQueryParams)
 import Database (Card(..))
 import Instances
 import SubsidiaryTypes
 
 
-instance ToParam (QueryParams "set" Set) where
+instance (ToHttpApiData a) => ToHttpApiData (LenientData a) where
+    toQueryParam (LenientData (Right a)) = toQueryParam a
+    toQueryParam (LenientData (Left e)) = "" -- doesn't matter as won't occur
+
+
+instance ToParam (RecoverableQueryParams "set" Set) where
     toParam _ =
         DocQueryParam "set"
             ["base", "intrigue-first-ed", "seaside", "dark-ages"]
@@ -163,7 +169,7 @@ instance ToParam (RecoverableQueryParam "extra-buy" CanDoItQueryChoice) where
             Normal
 
 
-instance ToParam (QueryParams "type" CardType) where
+instance ToParam (RecoverableQueryParams "type" CardType) where
     toParam _ =
         DocQueryParam "type"
             ["action", "victory", "duration", "prize"]
@@ -294,7 +300,7 @@ apiDocs = fromStrict . encodeUtf8 . fitOnPage . commonmarkToHtml [] . toStrict .
           extraForFilters :: ExtraInfo PublicAPI
           extraForFilters =
             extraInfo (Proxy :: Proxy (
-                "cards" :> "filter" :> QueryParams "set" Set
+                "cards" :> "filter" :> RecoverableQueryParams "set" Set
                         :> RecoverableQueryParam "min-coin-cost" Int
                         :> RecoverableQueryParam "max-coin-cost" Int
                         :> RecoverableQueryParam "has-potion" Bool
@@ -304,7 +310,8 @@ apiDocs = fromStrict . encodeUtf8 . fitOnPage . commonmarkToHtml [] . toStrict .
                         :> RecoverableQueryParam "no-reduce-hand-size" CanDoItQueryChoice
                         :> RecoverableQueryParam "draws" CanDoItQueryChoice :> QueryFlag "trasher"
                         :> RecoverableQueryParam "extra-buy" CanDoItQueryChoice
-                        :> QueryParams "type" CardType :> QueryParams "linked" Text
+                        :> RecoverableQueryParams "type" CardType
+                        :> QueryParams "linked" Text
                         :> Get '[JSON] (WithError [CardWithTypesAndLinks])
             )) $ defAction & notes <>~ [DocNote "Returns"
                 ["Array of cards (possibly empty) which satisfy all specified filters."]]
