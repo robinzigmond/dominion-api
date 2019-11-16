@@ -5,7 +5,7 @@
 module SubsidiaryTypes where
 
 import Data.Aeson
-import Data.Text (pack, unpack, append)
+import Data.Text (pack, unpack, append, Text)
 import Database.Persist.TH
 import GHC.Generics
 import Servant (FromHttpApiData(..), ToHttpApiData(..))
@@ -99,3 +99,10 @@ instance ToHttpApiData CanDoItQueryChoice where
 possibleChoices :: CanDoItQueryChoice -> [CanDoIt]
 possibleChoices CanSometimes = [Always, Sometimes]
 possibleChoices CanAlways = [Always]
+
+
+data WithError a = WithError {error :: Maybe Text, result :: Maybe a} deriving (Generic)
+
+instance (ToJSON a) => ToJSON (WithError a) where
+    toJSON (WithError Nothing r) = toJSON r
+    toJSON (WithError (Just e) _) = object ["error" .= e]

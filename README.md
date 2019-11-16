@@ -14,4 +14,4 @@ At the time of writing, most things seem to be working well. But there are still
 
 
 - Add tests!
-- make any error messages (eg. requests for a card name that doesn't exist) return them as JSON via an "error" key or similar
+- extend the error handling to include "bad" values for sets and types. Perhaps leave just the "errBody" as the returned error message in all cases.

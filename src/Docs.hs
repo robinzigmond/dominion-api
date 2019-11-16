@@ -30,7 +30,7 @@ import Servant
 import Servant.Docs
 import Servant.Docs.Internal (ToAuthInfo(..), showPath)
 
-import Api (PublicAPI, publicAPI, server)
+import Api (PublicAPI, publicAPI, server, RecoverableQueryParam)
 import Database (Card(..))
 import Instances
 import SubsidiaryTypes
@@ -49,7 +49,7 @@ instance ToParam (QueryParams "set" Set) where
             List
 
 
-instance ToParam (QueryParam "min-coin-cost" Int) where
+instance ToParam (RecoverableQueryParam "min-coin-cost" Int) where
     toParam _ =
         DocQueryParam "min-coin-cost"
             ["0", "2", "6", "9"]
@@ -57,7 +57,7 @@ instance ToParam (QueryParam "min-coin-cost" Int) where
             Normal
 
 
-instance ToParam (QueryParam "max-coin-cost" Int) where
+instance ToParam (RecoverableQueryParam "max-coin-cost" Int) where
     toParam _ =
         DocQueryParam "max-coin-cost"
             ["0", "3", "5", "8"]
@@ -65,7 +65,7 @@ instance ToParam (QueryParam "max-coin-cost" Int) where
             Normal
 
 
-instance ToParam (QueryParam "has-potion" Bool) where
+instance ToParam (RecoverableQueryParam "has-potion" Bool) where
     toParam _ =
         DocQueryParam "has-potion"
             ["true", "false"]
@@ -74,7 +74,7 @@ instance ToParam (QueryParam "has-potion" Bool) where
             Normal
 
 
-instance ToParam (QueryParam "has-debt" Bool) where
+instance ToParam (RecoverableQueryParam "has-debt" Bool) where
     toParam _ =
         DocQueryParam "has-debt"
             ["true", "false"]
@@ -91,7 +91,7 @@ instance ToParam (QueryFlag "is-kingdom") where
             Flag
 
 
-instance ToParam (QueryParam "nonterminal" CanDoItQueryChoice) where
+instance ToParam (RecoverableQueryParam "nonterminal" CanDoItQueryChoice) where
     toParam _ =
         DocQueryParam "nonterminal"
             ["sometimes", "always"]
@@ -102,7 +102,7 @@ instance ToParam (QueryParam "nonterminal" CanDoItQueryChoice) where
             Normal
 
 
-instance ToParam (QueryParam "village" CanDoItQueryChoice) where
+instance ToParam (RecoverableQueryParam "village" CanDoItQueryChoice) where
     toParam _ =
         DocQueryParam "village"
             ["sometimes", "always"]
@@ -112,7 +112,7 @@ instance ToParam (QueryParam "village" CanDoItQueryChoice) where
             Normal
 
 
-instance ToParam (QueryParam "no-reduce-hand-size" CanDoItQueryChoice) where
+instance ToParam (RecoverableQueryParam "no-reduce-hand-size" CanDoItQueryChoice) where
     toParam _ =
         DocQueryParam "no-reduce-hand-size"
             ["sometimes", "always"]
@@ -125,7 +125,7 @@ instance ToParam (QueryParam "no-reduce-hand-size" CanDoItQueryChoice) where
             Normal
 
 
-instance ToParam (QueryParam "draws" CanDoItQueryChoice) where
+instance ToParam (RecoverableQueryParam "draws" CanDoItQueryChoice) where
     toParam _ =
         DocQueryParam "draws"
             ["sometimes", "always"]
@@ -152,7 +152,7 @@ instance ToParam (QueryFlag "trasher") where
             Flag
 
 
-instance ToParam (QueryParam "extra-buy" CanDoItQueryChoice) where
+instance ToParam (RecoverableQueryParam "extra-buy" CanDoItQueryChoice) where
     toParam _ =
         DocQueryParam "extra-buys"
             ["sometimes", "always"]
@@ -208,6 +208,11 @@ instance ToSample Set where
 
 instance ToSample CardType where
     toSamples _ = singleSample Reaction
+
+
+
+instance (ToSample a) => ToSample (WithError a) where
+    toSamples _ = singleSample . WithError Nothing . snd . head $ toSamples Proxy
 
 
 apiDocs :: ByteString
@@ -282,7 +287,7 @@ apiDocs = fromStrict . encodeUtf8 . fitOnPage . commonmarkToHtml [] . toStrict .
 
           extraForAllCards :: ExtraInfo PublicAPI
           extraForAllCards =
-            extraInfo (Proxy :: Proxy ("cards" :> Get '[JSON] [CardWithTypesAndLinks])) $
+            extraInfo (Proxy :: Proxy ("cards" :> Get '[JSON] (WithError [CardWithTypesAndLinks]))) $
                 defAction & notes <>~ [DocNote "Returns"
                     ["Array of cards.", "Convenience endpoint to get a list of *all* cards, if desired."]]
 
@@ -290,30 +295,31 @@ apiDocs = fromStrict . encodeUtf8 . fitOnPage . commonmarkToHtml [] . toStrict .
           extraForFilters =
             extraInfo (Proxy :: Proxy (
                 "cards" :> "filter" :> QueryParams "set" Set
-                        :> QueryParam "min-coin-cost" Int
-                        :> QueryParam "max-coin-cost" Int :> QueryParam "has-potion" Bool
-                        :> QueryParam "has-debt" Bool :> QueryFlag "is-kingdom"
-                        :> QueryParam "nonterminal" CanDoItQueryChoice
-                        :> QueryParam "village" CanDoItQueryChoice
-                        :> QueryParam "no-reduce-hand-size" CanDoItQueryChoice
-                        :> QueryParam "draws" CanDoItQueryChoice :> QueryFlag "trasher"
-                        :> QueryParam "extra-buy" CanDoItQueryChoice
+                        :> RecoverableQueryParam "min-coin-cost" Int
+                        :> RecoverableQueryParam "max-coin-cost" Int
+                        :> RecoverableQueryParam "has-potion" Bool
+                        :> RecoverableQueryParam "has-debt" Bool :> QueryFlag "is-kingdom"
+                        :> RecoverableQueryParam "nonterminal" CanDoItQueryChoice
+                        :> RecoverableQueryParam "village" CanDoItQueryChoice
+                        :> RecoverableQueryParam "no-reduce-hand-size" CanDoItQueryChoice
+                        :> RecoverableQueryParam "draws" CanDoItQueryChoice :> QueryFlag "trasher"
+                        :> RecoverableQueryParam "extra-buy" CanDoItQueryChoice
                         :> QueryParams "type" CardType :> QueryParams "linked" Text
-                        :> Get '[JSON] [CardWithTypesAndLinks]
+                        :> Get '[JSON] (WithError [CardWithTypesAndLinks])
             )) $ defAction & notes <>~ [DocNote "Returns"
                 ["Array of cards (possibly empty) which satisfy all specified filters."]]
 
           extraForOneCard :: ExtraInfo PublicAPI
           extraForOneCard =
             extraInfo (Proxy :: Proxy ("cards" :> Capture "card-name" Text
-                    :> Get '[JSON] CardWithTypesAndLinks)) $
+                    :> Get '[JSON] (WithError CardWithTypesAndLinks))) $
                 defAction & notes <>~ [DocNote "Returns"
                     ["Single card, that whose name is :card-name",
                         "Returns an error if there is no such card"]]
 
           extraForSets :: ExtraInfo PublicAPI
           extraForSets =
-            extraInfo (Proxy :: Proxy ("sets" :> Get '[JSON] [Set])) $
+            extraInfo (Proxy :: Proxy ("sets" :> Get '[JSON] (WithError [Set]))) $
                 defAction & notes <>~ [DocNote "Returns"
                     ["List of all set names, in order of release (ending with \"promos\", " <>
                     "which is not a real set but a gathering of all individual promotional cards).",
@@ -323,7 +329,7 @@ apiDocs = fromStrict . encodeUtf8 . fitOnPage . commonmarkToHtml [] . toStrict .
 
           extraForTypes :: ExtraInfo PublicAPI
           extraForTypes =
-            extraInfo (Proxy :: Proxy ("types" :> Get '[JSON] [CardType])) $
+            extraInfo (Proxy :: Proxy ("types" :> Get '[JSON] (WithError [CardType]))) $
                 defAction & notes <>~ [DocNote "Returns"
                     ["List of all different card types which exist",
                     "This is a convenience endpoint provided for developers of applications " <>
