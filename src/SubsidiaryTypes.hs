@@ -4,6 +4,7 @@
 
 module SubsidiaryTypes where
 
+import Control.Applicative ((<|>))
 import Data.Aeson
 import Data.Text (pack, unpack, append, Text)
 import Database.Persist.TH
@@ -102,9 +103,16 @@ possibleChoices CanSometimes = [Always, Sometimes]
 possibleChoices CanAlways = [Always]
 
 
-data WithError a = WithError {error :: Maybe Text, result :: Maybe a} deriving (Generic)
+data WithError a = WithError {error :: Maybe Text, result :: Maybe a} deriving (Show, Generic)
 
 
 instance (ToJSON a) => ToJSON (WithError a) where
     toJSON (WithError Nothing r) = toJSON r
     toJSON (WithError (Just e) _) = object ["error" .= e]
+
+
+instance (FromJSON a) => FromJSON (WithError a) where
+    parseJSON v@(Object o)
+        = (WithError <$> (Just <$> (o .: "error")) <*> pure Nothing)
+            <|> (WithError <$> pure Nothing <*> parseJSON v)
+    parseJSON v = WithError <$> pure Nothing <*> parseJSON v

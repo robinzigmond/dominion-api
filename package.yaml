@@ -71,3 +71,6 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - dominion-api
+    - hspec
+    - servant-client
+    - http-client
