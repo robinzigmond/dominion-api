@@ -185,7 +185,18 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
                             ++ debtQuery ++ kingdomQuery ++ nonTerminalQuery
                             ++ villageQuery ++ noHandSizeReductionQuery ++ drawsQuery
                             ++ trashQuery ++ extraBuyQuery ++ typesQuery ++ linksQuery
-                    forM_ queries where_
+                    {- this is breaking when no filters are applied at all, because when there is no WHERE
+                    clause in the query then we get results with no matching "c" fields. As soon as any
+                    restriction is placed on this then obviously the NULL results disappear and the
+                    query is OK. The solution is simple, if "dirty" (would have been better to rewrite
+                    the query to return a Maybe value for c and handle that, but I couldn't get it
+                    to compile...) - if there would be no queries, insert a dummy one which has no
+                    effect other than to remove nulls. Eg. the one used below -}
+                    let amendedQueries =
+                            if null queries
+                                then [c ^. CardSet `in_` valList [minBound..maxBound]]
+                                else queries
+                    forM_ amendedQueries where_
                     on (lp1 ?. LinkPairsCardTwo ==. c2 ?. CardId)
                     on (lp1 ?. LinkPairsCardOne ==. lp ?. LinkPairsCardOne)
                     on (c1 ?. CardId ==. lp ?. LinkPairsCardTwo)
