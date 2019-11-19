@@ -1,11 +1,5 @@
--- testing, rough plan:
+{-# LANGUAGE OverloadedStrings #-}
 
--- use Servant Client to send requests, to test "business logic" (example database? test on real db?)
-
--- hspec-wai to test more general requests (eg to docs endpoint, or non-existent ones)
-
--- servant-quickcheck - test some of the "best practices", predicates at
--- https://github.com/haskell-servant/servant-quickcheck/blob/master/src/Servant/QuickCheck/Internal/Predicates.hs
 import Control.Concurrent (forkIO, killThread)
 import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
@@ -28,26 +22,34 @@ withApi action =
 
 
 spec :: Spec
-spec = apiTestRequestsSpec -- >> quickQueckSpec
+spec = apiTestRequestsSpec
 
 
 apiTestRequestsSpec :: Spec
 apiTestRequestsSpec = around_ withApi $ do
     let private :<|> public :<|> docs = client (Proxy :: Proxy DominionAPI)
-    let getAll :<|> getOne :<|> filter :<|> getSets :<|> getTypes = public
+    let getAll :<|> filter :<|> getOne :<|> getSets :<|> getTypes = public
     baseUrl <- runIO $ parseBaseUrl "http://localhost:8888"
     manager <- runIO $ newManager defaultManagerSettings
     let clientEnv = mkClientEnv manager baseUrl
 
-    describe "general GET requests" $ do
-        it "- the /cards route should succeed and result in some cards" $ do
+    describe "general GET requests:" $ do
+        it "the /cards route should succeed and result in some cards" $ do
             result <- runClientM getAll clientEnv
-            either (const []) (fromMaybe [] . S.result) result
-                `shouldNotSatisfy` null
+            getResultList result `shouldNotSatisfy` null
+        it "getting a single card which exists should return 1 result" $ do
+            result <- runClientM (getOne "copper") clientEnv
+            getResultSingle result `shouldNotBe` Nothing
+        it "getting a single card with doesn't exist should give an error" $ do
+            result <- runClientM (getOne "fake-card") clientEnv
+            getError result  `shouldNotBe` Nothing
+        -- tests for filters, singly and in combination
+        -- tests for linked cards being all present and correct, in each type of request
+        -- test for no repeats in arrays of types/links
 
-
-quickQueckSpec :: Spec
-quickQueckSpec = error "not implemented yet"
+        where getResultSingle = either (const Nothing) S.result
+              getResultList = either (const []) (fromMaybe [] . S.result)
+              getError = either (const Nothing) S.error
 
 
 main :: IO ()

@@ -75,6 +75,7 @@ Card
     increasesHandSize CanDoIt Maybe
     extraBuy CanDoIt Maybe
     trashes Bool
+    deriving Eq
     deriving Show
 Type json
     name CardType

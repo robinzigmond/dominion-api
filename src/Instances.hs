@@ -74,7 +74,7 @@ instance ToJSON Card where
                   ]
 
 
-data CardWithTypesAndLinks = CardWithTypesAndLinks Card [CardType] [Text] deriving (Show, Generic)
+data CardWithTypesAndLinks = CardWithTypesAndLinks Card [CardType] [Text] deriving (Eq, Show, Generic)
 
 
 instance FromJSON CardWithTypesAndLinks where
