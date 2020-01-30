@@ -52,7 +52,7 @@ type PublicAPI = "cards" :> Get '[JSON] (WithError [CardWithTypesAndLinks])
 
 
 getAllCards :: Handler (WithError [CardWithTypesAndLinks])
-getAllCards = showError . liftIO . runDBActions $ do
+getAllCards = showError . liftIO . (putStrLn "/cards" >>) . runDBActions $ do
     sqlres <- select $
         from $ \(c `InnerJoin` tc `InnerJoin` t `LeftOuterJoin` lp `LeftOuterJoin` c1) -> do
             on (c1 ?. CardId ==. lp ?. LinkPairsCardTwo)
@@ -82,7 +82,7 @@ getAllCards = showError . liftIO . runDBActions $ do
 
 
 getOneCard :: Text -> Handler (WithError CardWithTypesAndLinks)
-getOneCard name = showError . handlerWithError . liftIO . runDBActions $ do
+getOneCard name = showError . handlerWithError . liftIO . (putStrLn ("/cards/" ++ unpack name) >>) . runDBActions $ do
     sqlres <- select $
         from $ \(c `InnerJoin` tc `InnerJoin` t `LeftOuterJoin` lp `LeftOuterJoin` c1) -> do
             where_  (c ^. CardName ==. val name)
@@ -120,7 +120,7 @@ getFilteredCards :: [LenientData Set] -> Maybe (Either Text Int) -> Maybe (Eithe
 getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
         mustBeKingdom maybeNonTerminal maybeVillage maybeNoHandsizeReduction
         maybeDraws mustTrash maybeExtraBuy types links
-        = showError . checkForError . liftIO . runDBActions $ do
+        = showError . checkForError . liftIO . ((putStrLn "/cards/filter?something") >>) . runDBActions $ do
             sqlres <- select $
                 from $ \(c `InnerJoin` tc `InnerJoin` t `LeftOuterJoin` lp `LeftOuterJoin` c1
                         `FullOuterJoin` lp1 `FullOuterJoin` c2) -> do
@@ -249,11 +249,11 @@ getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
 
 
 getSets :: Handler (WithError [Set])
-getSets = showError . liftIO $ return [minBound..maxBound]
+getSets = showError . liftIO $ (putStrLn "/sets/") >> return [minBound..maxBound]
 
 
 getTypes :: Handler (WithError [CardType])
-getTypes = showError . liftIO $ return [minBound..maxBound]
+getTypes = showError . liftIO $ (putStrLn "/types/") >>return [minBound..maxBound]
 
 
 handlerWithError :: Handler (Maybe CardWithTypesAndLinks) -> Handler CardWithTypesAndLinks

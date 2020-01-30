@@ -1,8 +1,11 @@
 module Main where
 
-import Network.Wai.Handler.Warp
+import Network.Wai.Handler.Warp (runSettings, setPort, setLogger, defaultSettings)
+import Network.Wai.Logger (withStdoutLogger)
 
 import Complete (api)
 
 main :: IO ()
-main = run 8000 api
+main = withStdoutLogger $ \aplogger -> do
+        let settings = setPort 8000 $ setLogger aplogger defaultSettings
+        runSettings settings api

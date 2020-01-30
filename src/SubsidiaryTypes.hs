@@ -85,7 +85,7 @@ instance FromJSON CanDoIt where
     parseJSON _ = fail "invalid value - must be always, sometimes or never"
 
 
-data CanDoItQueryChoice = CanSometimes | CanAlways deriving (Read, Show)
+data CanDoItQueryChoice = CanSometimes | CanAlways deriving (Read, Show, Enum)
 
 
 instance FromHttpApiData CanDoItQueryChoice where

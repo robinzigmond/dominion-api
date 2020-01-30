@@ -4,12 +4,17 @@ import Control.Concurrent (forkIO, killThread)
 import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
 import Data.Maybe (fromMaybe)
+import Data.Text (Text, pack)
 import Network.HTTP.Client (newManager, defaultManagerSettings)
 import Network.Wai.Handler.Warp (run)
 import Servant
 import Servant.Client
+import Servant.QuickCheck
 import Test.Hspec
+import Test.Hspec.Wai.QuickCheck
+import Web.HttpApiData (LenientData(..))
 
+import Api (publicAPI, server)
 import Complete (api, DominionAPI)
 import qualified SubsidiaryTypes as S
 
@@ -22,7 +27,7 @@ withApi action =
 
 
 spec :: Spec
-spec = apiTestRequestsSpec
+spec = apiTestRequestsSpec >> quickCheckSpec
 
 
 apiTestRequestsSpec :: Spec
@@ -50,6 +55,41 @@ apiTestRequestsSpec = around_ withApi $ do
         where getResultSingle = either (const Nothing) S.result
               getResultList = either (const []) (fromMaybe [] . S.result)
               getError = either (const Nothing) S.error
+
+
+-- QuickCheck tests
+
+instance Arbitrary S.Set where
+    arbitrary = fmap toEnum arbitrary
+
+
+instance Arbitrary S.CardType where
+    arbitrary = fmap toEnum arbitrary
+
+
+instance Arbitrary S.CanDoItQueryChoice where
+    arbitrary = fmap toEnum arbitrary
+
+
+instance Arbitrary Text where
+    arbitrary = fmap pack arbitrary
+
+
+instance (Arbitrary a) => Arbitrary (LenientData a) where
+    arbitrary = fmap (LenientData . Right) arbitrary
+
+
+args :: Args
+args = defaultArgs { maxSuccess = 500, chatty = True }
+
+
+-- fails, unfortunately, and from a variety of different routes - despite those same routes working
+-- fine in ALL manual tests
+quickCheckSpec :: Spec
+quickCheckSpec = describe "QuickCheck global tests for public API -" $ do
+    it "API never gives 500 error" $
+        withServantServer publicAPI (return server) $ \burl -> 
+            serverSatisfies publicAPI burl args (not500 <%> mempty)
 
 
 main :: IO ()

@@ -46,6 +46,7 @@ dependencies:
 - string-conversions
 - containers
 - mtl
+- wai-logger
 
 library:
   source-dirs: src
@@ -74,3 +75,5 @@ tests:
     - hspec
     - servant-client
     - http-client
+    - servant-quickcheck
+    - hspec-wai
