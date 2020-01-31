@@ -10,7 +10,7 @@
 module Database where
 
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Logger (runStderrLoggingT, NoLoggingT)
+import Control.Monad.Logger (runNoLoggingT, NoLoggingT)
 import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.Resource (ResourceT)
 import Data.ByteString (ByteString)
@@ -18,6 +18,7 @@ import qualified Data.ByteString.Char8 as B
 import Data.Text
 import Database.Persist
 import Database.Persist.Sql (SqlBackend)
+import Database.Persist.Sqlite
 import Database.Persist.Postgresql
 import Database.Persist.TH
 import System.Environment (getEnv)
@@ -53,10 +54,17 @@ dbConn :: IO ByteString
 dbConn = buildConnString <$> dbConnection
 
 
-runDBActions :: ReaderT SqlBackend (NoLoggingT (ResourceT IO)) a -> IO a
-runDBActions ma = do
+type RunDB a = ReaderT SqlBackend (NoLoggingT (ResourceT IO)) a -> IO a
+
+
+runLiveDB :: RunDB a
+runLiveDB ma = do
     connStr <- dbConn
-    runStderrLoggingT . withPostgresqlPool connStr 10 $ liftIO . runSqlPersistMPool ma
+    runNoLoggingT . withPostgresqlPool connStr 10 $ liftIO . runSqlPersistMPool ma
+
+
+runTestDB :: RunDB a
+runTestDB = runSqlite ":memory"
 
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|

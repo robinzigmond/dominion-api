@@ -11,6 +11,7 @@ import Servant.Client
 import Test.Hspec
 
 import Complete (api, DominionAPI)
+import Database (runTestDB)
 import qualified SubsidiaryTypes as S
 
 
@@ -18,7 +19,7 @@ withApi :: IO () -> IO ()
 withApi action =
     -- we can spin up a server in another thread and kill that thread when done
     -- in an exception-safe way
-    bracket (liftIO $ forkIO $ run 8888 api) killThread (const action)
+    bracket (liftIO . forkIO . run 8888 $ api runTestDB) killThread (const action)
 
 
 spec :: Spec

@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeOperators #-}
 
 module Docs where
@@ -32,7 +33,7 @@ import Servant.Docs.Internal (ToAuthInfo(..), showPath)
 import Web.HttpApiData (LenientData(..))
 
 import Api (PublicAPI, publicAPI, server, RecoverableQueryParam, RecoverableQueryParams)
-import Database (Card(..))
+import Database (Card(..), RunDB)
 import Instances
 import SubsidiaryTypes
 
@@ -547,8 +548,8 @@ publicAPIWithDocs :: Proxy PublicAPIWithDocs
 publicAPIWithDocs = Proxy
 
 
-server :: Server PublicAPIWithDocs
-server = Api.server :<|> Tagged serveDocs
+server :: (forall a. RunDB a) -> Server PublicAPIWithDocs
+server runDB = Api.server runDB :<|> Tagged serveDocs
     where
         serveDocs _ respond =
             respond $ responseLBS ok200 [("Content-Type", "text/html")] apiDocs

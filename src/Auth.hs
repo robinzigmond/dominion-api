@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeOperators #-}
 
 module Auth where
@@ -42,9 +43,9 @@ type PrivateAPI = BasicAuth "dominion" () :> (
                     )
 
 
-insertCard :: CardWithTypesAndLinks -> Handler ()
-insertCard (CardWithTypesAndLinks baseCard types links) =
-    liftIO . runDBActions $ do
+insertCard :: RunDB () -> CardWithTypesAndLinks -> Handler ()
+insertCard runDB (CardWithTypesAndLinks baseCard types links) =
+    liftIO . runDB $ do
         runMigration migrateAll
         cardId <- insert baseCard
         -- insert linked cards
@@ -69,8 +70,8 @@ insertCard (CardWithTypesAndLinks baseCard types links) =
                     insert $ TypeCard cardId typeId
 
 
-updateCard :: Text -> CardWithTypesAndLinks -> Handler ()
-updateCard name (CardWithTypesAndLinks baseCard types links) = liftIO . runDBActions $ do
+updateCard :: RunDB () -> Text -> CardWithTypesAndLinks -> Handler ()
+updateCard runDB name (CardWithTypesAndLinks baseCard types links) = liftIO . runDB $ do
     existingCard <- selectFirst [CardName ==. name] []
     case existingCard of
         Just oldCard -> do
@@ -99,8 +100,8 @@ updateCard name (CardWithTypesAndLinks baseCard types links) = liftIO . runDBAct
         Nothing -> return ()
 
 
-deleteCard :: Text -> Handler ()
-deleteCard name = liftIO . runDBActions $ do
+deleteCard :: RunDB () -> Text -> Handler ()
+deleteCard runDB name = liftIO . runDB $ do
     existingCard <- selectFirst [CardName ==. name] []
     case existingCard of
         Just card -> do
@@ -119,7 +120,7 @@ doWithNoContent :: Handler () -> Handler NoContent
 doWithNoContent act = act >> return NoContent
 
 
-server :: Server PrivateAPI
-server = \_ -> doWithNoContent . insertCard
-            :<|> (doWithNoContent .) . updateCard
-            :<|> doWithNoContent . deleteCard
+server :: (forall a. RunDB a) -> Server PrivateAPI
+server runDB = \_ -> doWithNoContent . insertCard runDB
+                :<|> (doWithNoContent .) . updateCard runDB
+                :<|> doWithNoContent . deleteCard runDB

@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeOperators #-}
 
 module Api where
@@ -51,8 +52,8 @@ type PublicAPI = "cards" :> Get '[JSON] (WithError [CardWithTypesAndLinks])
                     :<|> "types" :> Get '[JSON] (WithError [CardType])
 
 
-getAllCards :: Handler (WithError [CardWithTypesAndLinks])
-getAllCards = showError . liftIO . runDBActions $ do
+getAllCards :: RunDB [CardWithTypesAndLinks] -> Handler (WithError [CardWithTypesAndLinks])
+getAllCards runDB = showError . liftIO . runDB $ do
     sqlres <- select $
         from $ \(c `InnerJoin` tc `InnerJoin` t `LeftOuterJoin` lp `LeftOuterJoin` c1) -> do
             on (c1 ?. CardId ==. lp ?. LinkPairsCardTwo)
@@ -81,8 +82,8 @@ getAllCards = showError . liftIO . runDBActions $ do
                 = CardWithTypesAndLinks c (noRepeats ts) (noRepeats ls)
 
 
-getOneCard :: Text -> Handler (WithError CardWithTypesAndLinks)
-getOneCard name = showError . handlerWithError . liftIO . runDBActions $ do
+getOneCard :: RunDB (Maybe CardWithTypesAndLinks) -> Text -> Handler (WithError CardWithTypesAndLinks)
+getOneCard runDB name = showError . handlerWithError . liftIO . runDB $ do
     sqlres <- select $
         from $ \(c `InnerJoin` tc `InnerJoin` t `LeftOuterJoin` lp `LeftOuterJoin` c1) -> do
             where_  (c ^. CardName ==. val name)
@@ -108,7 +109,8 @@ getOneCard name = showError . handlerWithError . liftIO . runDBActions $ do
                 = CardWithTypesAndLinks c (noRepeats ts) (noRepeats ls)
 
 
-getFilteredCards :: [LenientData Set] -> Maybe (Either Text Int) -> Maybe (Either Text Int)
+getFilteredCards :: RunDB [CardWithTypesAndLinks] -> [LenientData Set] -> Maybe (Either Text Int)
+                        -> Maybe (Either Text Int)
                         -> Maybe (Either Text Bool) -> Maybe (Either Text Bool)
                         -> Bool -> Maybe (Either Text CanDoItQueryChoice)
                         -> Maybe (Either Text CanDoItQueryChoice)
@@ -117,10 +119,10 @@ getFilteredCards :: [LenientData Set] -> Maybe (Either Text Int) -> Maybe (Eithe
                         -> Bool -> Maybe (Either Text CanDoItQueryChoice)
                         -> [LenientData CardType] -> [Text]
                         -> Handler (WithError [CardWithTypesAndLinks])
-getFilteredCards sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
+getFilteredCards runDB sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeedsDebt
         mustBeKingdom maybeNonTerminal maybeVillage maybeNoHandsizeReduction
         maybeDraws mustTrash maybeExtraBuy types links
-        = showError . checkForError . liftIO . runDBActions $ do
+        = showError . checkForError . liftIO . runDB $ do
             sqlres <- select $
                 from $ \(c `InnerJoin` tc `InnerJoin` t `LeftOuterJoin` lp `LeftOuterJoin` c1
                         `FullOuterJoin` lp1 `FullOuterJoin` c2) -> do
@@ -270,12 +272,12 @@ showError handler =
         return . flip WithError Nothing . Just . pack . B.unpack . errBody
 
 
-server :: Server PublicAPI
-server = getAllCards
-            :<|> getFilteredCards
-            :<|> getOneCard
-            :<|> getSets
-            :<|> getTypes
+server :: (forall a. RunDB a) -> Server PublicAPI
+server runDB = getAllCards runDB
+                :<|> getFilteredCards runDB
+                :<|> getOneCard runDB
+                :<|> getSets
+                :<|> getTypes
 
 
 publicAPI :: Proxy PublicAPI

@@ -29,6 +29,7 @@ dependencies:
 - servant-server
 - persistent
 - persistent-postgresql
+- persistent-sqlite
 - persistent-template
 - monad-logger
 - resourcet
