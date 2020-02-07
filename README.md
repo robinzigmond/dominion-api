@@ -7,10 +7,4 @@ I hope it will be useful but the main motivation for this is, after a year or so
 - the incredible [servant](https://haskell-servant.readthedocs.io/en/stable/index.html) package which provides a type-level (and therefore totally type-safe) DSL for building APIs
 - [Persistent](https://www.yesodweb.com/book/persistent) and [Esqueleto](https://www.stackage.org/package/esqueleto) to handle the database
 
-
-## Todo List
-
-At the time of writing, most things seem to be working well. But there are still things left to do (just one left now as far as I know - but a big and important one):
-
-
-- Add tests!
+As of now (7/2/20), the API is mostly finished - I'm slowly adding tests and want to tidy things up a bit (both the code, and the API schema). Doing the tests first so that I have some confidence that changes haven't broken it!

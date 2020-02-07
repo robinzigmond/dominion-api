@@ -47,6 +47,7 @@ dependencies:
 - string-conversions
 - containers
 - mtl
+- directory
 
 library:
   source-dirs: src

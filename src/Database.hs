@@ -63,8 +63,12 @@ runLiveDB ma = do
     runNoLoggingT . withPostgresqlPool connStr 10 $ liftIO . runSqlPersistMPool ma
 
 
+testDBName :: Text
+testDBName = "dominiontestdb.db"
+
+
 runTestDB :: RunDB a
-runTestDB = runSqlite ":memory"
+runTestDB = runSqlite testDBName
 
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|
