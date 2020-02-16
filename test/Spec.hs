@@ -3,6 +3,7 @@
 import Control.Concurrent (forkIO, killThread)
 import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
+import Data.List (nub)
 import Data.Maybe (fromMaybe)
 import Data.Text (unpack)
 import Network.HTTP.Client (newManager, defaultManagerSettings)
@@ -309,58 +310,183 @@ apiTestRequestsSpec = around_ withApi $ do
             filteredCardNames `shouldContain` ["festival"]
             filteredCardNames `shouldContain` ["pearl-diver"]
             filteredCardNames `shouldContain` ["alchemist"]
+        it "filter for cards which are sometimes villages" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False
+                        Nothing (Just S.CanSometimes) Nothing Nothing False Nothing [] []) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 2
+            filteredCardNames `shouldContain` ["festival"]
+            filteredCardNames `shouldContain` ["vassal"]
+        it "and for cards which are always villages" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False
+                         Nothing (Just S.CanAlways) Nothing Nothing False Nothing [] []) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 1
+            filteredCardNames `shouldContain` ["festival"]
+        it "filter for cards which sometimes don't reduce your hand-size" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False
+                        Nothing Nothing (Just S.CanSometimes) Nothing False Nothing [] []) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 4
+            filteredCardNames `shouldContain` ["adventurer"]
+            filteredCardNames `shouldContain` ["vassal"]
+            filteredCardNames `shouldContain` ["pearl-diver"]
+            filteredCardNames `shouldContain` ["alchemist"]
+        it "and for cards which never reduce hand-size" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False
+                        Nothing Nothing (Just S.CanAlways) Nothing False Nothing [] []) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 3
+            filteredCardNames `shouldContain` ["adventurer"]
+            filteredCardNames `shouldContain` ["pearl-diver"]
+            filteredCardNames `shouldContain` ["alchemist"]
+        it "filter for cards which can increase your hand-size" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False
+                        Nothing Nothing Nothing (Just S.CanSometimes) False Nothing [] []) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 3
+            filteredCardNames `shouldContain` ["adventurer"]
+            filteredCardNames `shouldContain` ["vassal"]
+            filteredCardNames `shouldContain` ["alchemist"]
+        it "and for cards which always draw" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False
+                        Nothing Nothing Nothing (Just S.CanAlways) False Nothing [] []) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 2
+            filteredCardNames `shouldContain` ["adventurer"]
+            filteredCardNames `shouldContain` ["alchemist"]
+        it "filter for cards which (pseudo-)trash)" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False
+                        Nothing Nothing Nothing Nothing True Nothing [] []) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 3
+            filteredCardNames `shouldContain` ["chapel"]
+            filteredCardNames `shouldContain` ["island"]
+            filteredCardNames `shouldContain` ["ambassador"]
+        it "filter for cards which can give an extra buy" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False Nothing
+                        Nothing Nothing Nothing False (Just S.CanSometimes) [] []) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 2
+            filteredCardNames `shouldContain` ["festival"]
+            filteredCardNames `shouldContain` ["vassal"]
+        it "and for cards which always give an extra buy" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False Nothing
+                        Nothing Nothing Nothing False (Just S.CanAlways) [] []) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 1
+            filteredCardNames `shouldContain` ["festival"]
+        it "filter by type" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False Nothing
+                        Nothing Nothing Nothing False Nothing
+                        [LenientData $ Right S.Treasure] []) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 2
+            filteredCardNames `shouldContain` ["copper"]
+            filteredCardNames `shouldContain` ["potion"]
+        it "with a different type" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False Nothing
+                        Nothing Nothing Nothing False Nothing
+                        [LenientData $ Right S.Victory] []) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 2
+            filteredCardNames `shouldContain` ["province"]
+            filteredCardNames `shouldContain` ["island"]
+        it "with two types at once" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False Nothing
+                        Nothing Nothing Nothing False Nothing
+                        [LenientData $ Right S.Attack, LenientData $ Right S.Victory] []) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 3
+            filteredCardNames `shouldContain` ["province"]
+            filteredCardNames `shouldContain` ["island"]
+            filteredCardNames `shouldContain` ["ambassador"]
+        it "filter by linked cards" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False Nothing
+                        Nothing Nothing Nothing False Nothing [] ["potion"]) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 2
+            filteredCardNames `shouldContain` ["possession"]
+            filteredCardNames `shouldContain` ["alchemist"]
+        it "combinations of different filters: cards which always draw and are sometimes nonterminal" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False
+                        (Just S.CanSometimes) Nothing Nothing (Just S.CanAlways)
+                        False Nothing [] []) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 1
+            filteredCardNames `shouldContain` ["alchemist"]
+        it "(pseudo-)trashers with type Attack" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False
+                        Nothing Nothing Nothing Nothing True Nothing
+                        [LenientData $ Right S.Attack] []) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 1
+            filteredCardNames `shouldContain` ["ambassador"]
+        it "kingdom Victory cards" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing True
+                        Nothing Nothing Nothing Nothing False Nothing
+                        [LenientData $ Right S.Victory] []) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 1
+            filteredCardNames `shouldContain` ["island"]
+        it "cards from one of two sets which sometimes don't reduce handsize" $ do
+            result <- runClientM (filterCards
+                        [LenientData $ Right S.BaseFirstEd, LenientData $ Right S.Seaside]
+                        Nothing Nothing Nothing Nothing False Nothing Nothing
+                        (Just S.CanSometimes) Nothing False Nothing [] []) clientEnv
+            let filteredCardNames = map (cardName . underlyingCard) $ getResultList result
+            length filteredCardNames `shouldBe` 2
+            filteredCardNames `shouldContain` ["adventurer"]
+            filteredCardNames `shouldContain` ["pearl-diver"]
 
-        -- filter for maybeVillage
-        -- - maybeVillage sometimes (2)
-        -- - maybeVillage always (1)
-        -- filter for maybeNoHandsizeReduction
-        -- - maybeNoHandiszeReduction sometimes (4)
-        -- - maybeNoHandsizeReduction always (3)
-        -- filter for maybeDraws
-        -- - maybeDraws sometimes (3)
-        -- - maybeDraws always (2)
-        -- filter for mustTrash
-        -- - mustTrash true (present) (3)
-        -- filter for maybeExtraBuy
-        -- - maybeExtraBuy sometimes (2)
-        -- - maybeExtraBuy always (1)
-        -- filter for types
-        -- - types [treasure] (1)
-        -- - types [victory] (2)
-        -- - types [attack, victory] (2)
-        -- filter for linked cards
-        -- - links [potion] (2)
-        -- combinations (just a few, not all possible - perhaps 3 or 4?):
-        -- - maybeDraws always and maybeNonTerminal always (1 - Alchemist)
-        -- - mustTrash true and types [attack] (1 - Ambassador)
-        -- - mustBeKingdom and types [victory] (1 - Island)
-        -- - sets [seaside, baseFirstEd] and maybeNoHandsizeReduction sometimes (2 - Adventurer + Pearl Diver)
-        -- get all, and check that for each card in the response, types and linked-cards have no repeats
-        -- filter by links to [alchemist], check the response is just potion and that it has BOTH links
-        -- and simple tests for sets/types endpoints!
+    describe "miscellaneous other tests" $ do
+        it "no repeats in lists of types and linked cards" $ do
+            result <- runClientM getAll clientEnv
+            let noRepeat xs = length xs == length (nub xs)
+            let types (CardWithTypesAndLinks _ ts _) = ts
+            let links (CardWithTypesAndLinks _ _ ls) = ls
+            let allTypes = map types $ getResultList result
+            let allLinks = map links $ getResultList result
+            allTypes `shouldSatisfy` all noRepeat
+            allLinks `shouldSatisfy` all noRepeat
+        it "filtering by link includes all links in the results" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False Nothing
+                        Nothing Nothing Nothing False Nothing [] ["alchemist"]) clientEnv
+            let resultList = getResultList result
+            length resultList `shouldBe` 1
+            let [CardWithTypesAndLinks _ _ links] = resultList
+            length links `shouldBe` 2
+            links `shouldContain` ["alchemist"]
+            links `shouldContain` ["possession"]
+        it "the sets endpoint works as intended" $ do
+            result <- runClientM getSets clientEnv
+            getResultList result `shouldNotSatisfy` null
+        it "and so does the types endpoint" $ do
+            result <- runClientM getTypes clientEnv
+            getResultList result `shouldNotSatisfy` null
 
-        describe "tidying up" $ do
-            it "remove all cards to leave database empty" $ do
-                let allCards = ["copper", "province", "chapel", "festival", "adventurer",
-                        "vassal", "pearl-diver", "island", "ambassador", "possession",
-                        "potion", "alchemist", "engineer"];
-                mapM_ (flip runClientM clientEnv . delete) allCards
+    describe "tidying up" $ do
+        it "remove all cards to leave database empty" $ do
+            let allCards = ["copper", "province", "chapel", "festival", "adventurer",
+                    "vassal", "pearl-diver", "island", "ambassador", "possession",
+                    "potion", "alchemist", "engineer"];
+            mapM_ (flip runClientM clientEnv . delete) allCards
 
 
-        where getResultSingle = either (const Nothing) S.result
-              getResultList = either (const []) (fromMaybe [] . S.result)
-              getError = either (const Nothing) S.error
-              getResponseError = either Just (const Nothing)
-              copperCard = CardWithTypesAndLinks
-                (Card "copper" S.Base (Just 0) (Just False) (Just 0) "1 Coin"
-                    Nothing False Nothing Nothing Nothing Nothing Nothing False)
+    where getResultSingle = either (const Nothing) S.result
+          getResultList = either (const []) (fromMaybe [] . S.result)
+          getError = either (const Nothing) S.error
+          getResponseError = either Just (const Nothing)
+          copperCard = CardWithTypesAndLinks
+            (Card "copper" S.Base (Just 0) (Just False) (Just 0) "1 Coin"
+                Nothing False Nothing Nothing Nothing Nothing Nothing False)
                 [S.Treasure] []
-              getStatus maybeErr = do
-                  clientErr <- getResponseError maybeErr
-                  case clientErr of
-                      FailureResponse _ (Response (Status code _) _ _ _) -> Just code
-                      _ -> Nothing
-              underlyingCard (CardWithTypesAndLinks c _ _) = c
+          getStatus maybeErr = do
+            clientErr <- getResponseError maybeErr
+            case clientErr of
+                FailureResponse _ (Response (Status code _) _ _ _) -> Just code
+                _ -> Nothing
+          underlyingCard (CardWithTypesAndLinks c _ _) = c
 
 
 main :: IO ()
