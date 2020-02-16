@@ -18,7 +18,6 @@ import qualified Data.ByteString.Char8 as B
 import Data.Text
 import Database.Persist
 import Database.Persist.Sql (SqlBackend)
-import Database.Persist.Sqlite
 import Database.Persist.Postgresql
 import Database.Persist.TH
 import System.Environment (getEnv)
@@ -63,12 +62,13 @@ runLiveDB ma = do
     runNoLoggingT . withPostgresqlPool connStr 10 $ liftIO . runSqlPersistMPool ma
 
 
-testDBName :: Text
-testDBName = "dominiontestdb.db"
 
-
+-- use (separate) Postgres database for running tests, because SQLite does not recognise Full Outer Joines
 runTestDB :: RunDB a
-runTestDB = runSqlite testDBName
+runTestDB ma = do
+    connStr <- buildConnString <$> (DbConnection <$> readEnv "dominionDbHost" <*> pure "dominiontest"
+        <*> readEnv "dominionDbUser" <*> readEnv "dominionDbPassword" <*> readEnv "dominionDbPort")
+    runNoLoggingT . withPostgresqlPool connStr 10 $ liftIO . runSqlPersistMPool ma
 
 
 share [mkPersist sqlSettings, mkMigrate "migrateAll"] [persistLowerCase|

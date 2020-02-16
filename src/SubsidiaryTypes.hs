@@ -40,7 +40,7 @@ instance FromHttpApiData CardType where
 
 
 instance ToHttpApiData CardType where
-    toQueryParam = pack . show
+    toQueryParam = pack . kebab . show
 
 
 data Set = Base | BaseFirstEd | BaseSecondEd | Intrigue | IntrigueFirstEd
@@ -67,7 +67,7 @@ instance FromHttpApiData Set where
 
 
 instance ToHttpApiData Set where
-    toQueryParam = pack . show
+    toQueryParam = pack . kebab . show
 
 
 data CanDoIt = Always | Sometimes | Never deriving (Eq, Ord, Show, Read, Generic)
@@ -95,7 +95,8 @@ instance FromHttpApiData CanDoItQueryChoice where
 
 
 instance ToHttpApiData CanDoItQueryChoice where
-    toQueryParam = pack . show
+    toQueryParam CanSometimes = "sometimes"
+    toQueryParam CanAlways = "always"
 
 
 possibleChoices :: CanDoItQueryChoice -> [CanDoIt]
