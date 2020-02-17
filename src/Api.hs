@@ -61,25 +61,7 @@ getAllCards runDB = showError . liftIO . runDB $ do
             on (t ^. TypeId ==. tc ^. TypeCardTypeId)
             on (c ^. CardId ==. tc ^. TypeCardCardId)
             return (c, t, c1)
-    return . map uniques $ foldr merge [] sqlres
-        where
-            resolveCard c t (Just c1) = CardWithTypesAndLinks (entityVal c) [typeName . entityVal $ t]
-                [cardName . entityVal $ c1]
-            resolveCard c t Nothing = CardWithTypesAndLinks (entityVal c) [typeName . entityVal $ t] []
-            mergeCards (c, t, Just c1) (CardWithTypesAndLinks card types links)
-                = CardWithTypesAndLinks card (typeName (entityVal  t) : types)
-                    (cardName (entityVal c1) : links)
-            mergeCards (c, t, Nothing) (CardWithTypesAndLinks card types links)
-                = CardWithTypesAndLinks card (typeName (entityVal  t) : types) links
-            merge (c, t, c1) [] = [resolveCard c t c1]
-            merge (c, t, c1) (cd@(CardWithTypesAndLinks card _ _) : cs)
-                | cardName (entityVal c) == cardName card
-                    = mergeCards (c, t, c1) cd : cs
-                | otherwise = cd : merge (c, t, c1) cs
-            noRepeats :: (Ord a) => [a] -> [a]
-            noRepeats = S.toList . S.fromList
-            uniques (CardWithTypesAndLinks c ts ls)
-                = CardWithTypesAndLinks c (noRepeats ts) (noRepeats ls)
+    return . map uniques $ foldr mergeList [] sqlres
 
 
 getOneCard :: RunDB (Maybe CardWithTypesAndLinks) -> Text -> Handler (WithError CardWithTypesAndLinks)
@@ -103,10 +85,6 @@ getOneCard runDB name = showError . handlerWithError . liftIO . runDB $ do
                     (cardName (entityVal c1) : links)
               merge (c, t, Nothing) (Just (CardWithTypesAndLinks card types links))
                 = Just $ CardWithTypesAndLinks card (typeName (entityVal  t) : types) links
-              noRepeats :: (Ord a) => [a] -> [a]
-              noRepeats = S.toList . S.fromList
-              uniques (CardWithTypesAndLinks c ts ls)
-                = CardWithTypesAndLinks c (noRepeats ts) (noRepeats ls)
 
 
 getFilteredCards :: RunDB [CardWithTypesAndLinks] -> [LenientData Set] -> Maybe (Either Text Int)
@@ -206,7 +184,7 @@ getFilteredCards runDB sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeed
                     on (t ^. TypeId ==. tc ^. TypeCardTypeId)
                     on (c ^. CardId ==. tc ^. TypeCardCardId)
                     return (c, t, c2)
-            return . map uniques $ foldr merge [] sqlres
+            return . map uniques $ foldr mergeList [] sqlres
                 where
                     extract :: [LenientData a] -> [a]
                     extract [] = []
@@ -229,25 +207,36 @@ getFilteredCards runDB sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeed
 
                     throwQueryError e = throwError $ err422 { errBody = e }
 
-                    resolveCard c t (Just c1) = CardWithTypesAndLinks (entityVal c) [typeName . entityVal $ t]
-                        [cardName . entityVal $ c1]
-                    resolveCard c t Nothing = CardWithTypesAndLinks (entityVal c) [typeName . entityVal $ t] []    
-                    mergeCards (c, t, Just c1) (CardWithTypesAndLinks card types links)
-                        = CardWithTypesAndLinks card (typeName (entityVal  t) : types)
-                            (cardName (entityVal c1) : links)
-                    mergeCards (c, t, Nothing) (CardWithTypesAndLinks card types links)
-                        = CardWithTypesAndLinks card (typeName (entityVal  t) : types) links
-                    merge (c, t, c1) [] = [resolveCard c t c1]
-                    merge (c, t, c1) (cd@(CardWithTypesAndLinks card _ _) : cs)
-                        | cardName (entityVal c) == cardName card
-                            = mergeCards (c, t, c1) cd : cs
-                        | otherwise = cd : merge (c, t, c1) cs
 
-                    noRepeats :: (Ord a) => [a] -> [a]
-                    noRepeats = S.toList . S.fromList
+uniques :: CardWithTypesAndLinks -> CardWithTypesAndLinks
+uniques (CardWithTypesAndLinks c ts ls) = CardWithTypesAndLinks c (noRepeats ts) (noRepeats ls)
 
-                    uniques (CardWithTypesAndLinks c ts ls)
-                        = CardWithTypesAndLinks c (noRepeats ts) (noRepeats ls)
+
+noRepeats :: (Ord a) => [a] -> [a]
+noRepeats = S.toList . S.fromList
+
+
+resolveCard :: Entity Card -> Entity Type -> Maybe (Entity Card) -> CardWithTypesAndLinks
+resolveCard c t (Just c1) = CardWithTypesAndLinks (entityVal c) [typeName . entityVal $ t]
+    [cardName . entityVal $ c1]
+resolveCard c t Nothing = CardWithTypesAndLinks (entityVal c) [typeName . entityVal $ t] [] 
+
+
+mergeList :: (Entity Card, Entity Type, Maybe (Entity Card))
+    -> [CardWithTypesAndLinks] -> [CardWithTypesAndLinks]
+mergeList (c, t, c1) [] = [resolveCard c t c1]
+mergeList (c, t, c1) (cd@(CardWithTypesAndLinks card _ _) : cs)
+    | cardName (entityVal c) == cardName card
+        = mergeCards (t, c1) cd : cs
+    | otherwise = cd : mergeList (c, t, c1) cs
+
+
+mergeCards :: (Entity Type, Maybe (Entity Card)) -> CardWithTypesAndLinks -> CardWithTypesAndLinks
+mergeCards (t, Just c1) (CardWithTypesAndLinks card types links)
+    = CardWithTypesAndLinks card (typeName (entityVal  t) : types)
+        (cardName (entityVal c1) : links)
+mergeCards (t, Nothing) (CardWithTypesAndLinks card types links)
+    = CardWithTypesAndLinks card (typeName (entityVal  t) : types) links
 
 
 getSets :: Handler (WithError [Set])
