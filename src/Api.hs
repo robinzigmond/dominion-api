@@ -32,8 +32,7 @@ type RecoverableQueryParam = QueryParam' '[Optional, Lenient]
 type RecoverableQueryParams s a = QueryParams s (LenientData a)
 
 
-type PublicAPI = "cards" :> Get '[JSON] (WithError [CardWithTypesAndLinks])
-                    :<|> "cards" :> "filter" :> RecoverableQueryParams "set" Set
+type PublicAPI = "cards" :> RecoverableQueryParams "set" Set
                         :> RecoverableQueryParam "min-coin-cost" Int
                         :> RecoverableQueryParam "max-coin-cost" Int
                         :> RecoverableQueryParam "has-potion" Bool
@@ -46,22 +45,11 @@ type PublicAPI = "cards" :> Get '[JSON] (WithError [CardWithTypesAndLinks])
                         :> RecoverableQueryParams "type" CardType
                         :> QueryParams "linked" Text
                         :> Get '[JSON] (WithError [CardWithTypesAndLinks])
-                    :<|> "cards" :> Capture "card-name" Text
+                    :<|> "card" :> Capture "card-name" Text
                         :> Get '[JSON] (WithError CardWithTypesAndLinks)
                     :<|> "sets" :> Get '[JSON] (WithError [Set])
                     :<|> "types" :> Get '[JSON] (WithError [CardType])
 
-
-getAllCards :: RunDB [CardWithTypesAndLinks] -> Handler (WithError [CardWithTypesAndLinks])
-getAllCards runDB = showError . liftIO . runDB $ do
-    sqlres <- select $
-        from $ \(c `InnerJoin` tc `InnerJoin` t `LeftOuterJoin` lp `LeftOuterJoin` c1) -> do
-            on (c1 ?. CardId ==. lp ?. LinkPairsCardTwo)
-            on (just (c ^. CardId) ==. lp ?. LinkPairsCardOne)
-            on (t ^. TypeId ==. tc ^. TypeCardTypeId)
-            on (c ^. CardId ==. tc ^. TypeCardCardId)
-            return (c, t, c1)
-    return . map uniques $ foldr mergeList [] sqlres
 
 
 getOneCard :: RunDB (Maybe CardWithTypesAndLinks) -> Text -> Handler (WithError CardWithTypesAndLinks)
@@ -262,8 +250,7 @@ showError handler =
 
 
 server :: (forall a. RunDB a) -> Server PublicAPI
-server runDB = getAllCards runDB
-                :<|> getFilteredCards runDB
+server runDB = getFilteredCards runDB
                 :<|> getOneCard runDB
                 :<|> getSets
                 :<|> getTypes

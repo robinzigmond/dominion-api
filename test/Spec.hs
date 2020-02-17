@@ -36,7 +36,7 @@ spec = apiTestRequestsSpec
 apiTestRequestsSpec :: Spec
 apiTestRequestsSpec = around_ withApi $ do
     let private :<|> public :<|> docs = client (Proxy :: Proxy DominionAPI)
-    let getAll :<|> filterCards :<|> getOne :<|> getSets :<|> getTypes = public
+    let filterCards :<|> getOne :<|> getSets :<|> getTypes = public
     theUsername <- runIO $ readEnv "dominionAdminUser"
     thePassword <- runIO $ readEnv "dominionAdminPassword" 
     let insert :<|> update :<|> delete = private $ BasicAuthData theUsername thePassword
@@ -45,6 +45,10 @@ apiTestRequestsSpec = around_ withApi $ do
     baseUrl <- runIO $ parseBaseUrl "http://localhost:8888"
     manager <- runIO $ newManager defaultManagerSettings
     let clientEnv = mkClientEnv manager baseUrl
+    -- short name for getting all cards
+    let getAll = filterCards [] Nothing Nothing Nothing Nothing False
+                    Nothing Nothing Nothing Nothing False Nothing [] []
+
 
     describe "private API for POST/PUT/DELETE" $ do
         let fooCard = CardWithTypesAndLinks (Card

@@ -289,19 +289,13 @@ apiDocs = fromStrict . encodeUtf8 . fitOnPage . commonmarkToHtml [] . toStrict .
 
           fitOnPage = T.replace "<code" "<code style=\"white-space: normal\";"
 
-          extras = extraForAllCards <> extraForFilters <> extraForOneCard
-                    <> extraForSets <> extraForTypes
+          extras = extraForFilters <> extraForOneCard <> extraForSets <> extraForTypes
 
-          extraForAllCards :: ExtraInfo PublicAPI
-          extraForAllCards =
-            extraInfo (Proxy :: Proxy ("cards" :> Get '[JSON] (WithError [CardWithTypesAndLinks]))) $
-                defAction & notes <>~ [DocNote "Returns"
-                    ["Array of cards.", "Convenience endpoint to get a list of *all* cards, if desired."]]
 
           extraForFilters :: ExtraInfo PublicAPI
           extraForFilters =
             extraInfo (Proxy :: Proxy (
-                "cards" :> "filter" :> RecoverableQueryParams "set" Set
+                "cards" :> RecoverableQueryParams "set" Set
                         :> RecoverableQueryParam "min-coin-cost" Int
                         :> RecoverableQueryParam "max-coin-cost" Int
                         :> RecoverableQueryParam "has-potion" Bool
@@ -319,7 +313,7 @@ apiDocs = fromStrict . encodeUtf8 . fitOnPage . commonmarkToHtml [] . toStrict .
 
           extraForOneCard :: ExtraInfo PublicAPI
           extraForOneCard =
-            extraInfo (Proxy :: Proxy ("cards" :> Capture "card-name" Text
+            extraInfo (Proxy :: Proxy ("card" :> Capture "card-name" Text
                     :> Get '[JSON] (WithError CardWithTypesAndLinks))) $
                 defAction & notes <>~ [DocNote "Returns"
                     ["Single card, that whose name is :card-name",
