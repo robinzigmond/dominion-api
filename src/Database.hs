@@ -50,7 +50,9 @@ buildConnString (DbConnection host name user pw port) =
 
 
 dbConn :: IO ByteString
-dbConn = buildConnString <$> dbConnection
+-- dbConn = buildConnString <$> dbConnection (Old version used for local development, Heroku stores the
+-- whole connection string (URL) in a single environment variable)
+dbConn = readEnv "DATABASE_URL"
 
 
 type RunDB a = ReaderT SqlBackend (NoLoggingT (ResourceT IO)) a -> IO a
