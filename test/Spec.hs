@@ -462,6 +462,16 @@ apiTestRequestsSpec = around_ withApi $ do
             length links `shouldBe` 2
             links `shouldContain` ["alchemist"]
             links `shouldContain` ["possession"]
+        it "filtering by type includes all types in the results" $ do
+            result <- runClientM (filterCards [] Nothing Nothing Nothing Nothing False Nothing
+                        Nothing Nothing Nothing False Nothing
+                        [LenientData $ Right S.Attack] []) clientEnv
+            let resultList = getResultList result
+            length resultList `shouldBe` 1
+            let [CardWithTypesAndLinks _ types _] = resultList
+            length types `shouldBe` 2
+            types `shouldContain` [S.Attack]
+            types `shouldContain` [S.Action]
         it "the sets endpoint works as intended" $ do
             result <- runClientM getSets clientEnv
             getResultList result `shouldNotSatisfy` null
