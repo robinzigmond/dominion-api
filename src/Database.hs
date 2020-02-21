@@ -20,7 +20,7 @@ import Database.Persist
 import Database.Persist.Sql (SqlBackend)
 import Database.Persist.Postgresql
 import Database.Persist.TH
-import System.Environment (getEnv)
+import System.Environment (getEnv, lookupEnv)
 
 import SubsidiaryTypes
 
@@ -49,10 +49,18 @@ buildConnString (DbConnection host name user pw port) =
         <> user <> " password=" <> pw <> " port=" <> port 
 
 
+isProd :: IO Bool
+-- determine whether we're in the production or development environment,
+-- as determined by an environment variable
+isProd = fmap (/= Nothing) $ lookupEnv "DOMINIONAPIPROD"
+
+
 dbConn :: IO ByteString
--- dbConn = buildConnString <$> dbConnection (Old version used for local development, Heroku stores the
--- whole connection string (URL) in a single environment variable)
-dbConn = readEnv "DATABASE_URL"
+dbConn = do
+    prod <- isProd
+    if prod
+        then readEnv "DATABASE_URL"
+        else buildConnString <$> dbConnection
 
 
 type RunDB a = ReaderT SqlBackend (NoLoggingT (ResourceT IO)) a -> IO a
