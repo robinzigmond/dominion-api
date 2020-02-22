@@ -91,7 +91,7 @@ getFilteredCards runDB sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeed
         = showError . checkForError . liftIO . runDB $ do
             sqlres <- select $
                 from $ \(c `InnerJoin` tc `InnerJoin` t `LeftOuterJoin` lp `LeftOuterJoin` c1
-                        `FullOuterJoin` lp1 `FullOuterJoin` c2) -> do
+                        `FullOuterJoin` lp1 `FullOuterJoin` c2 `InnerJoin` tc1 `InnerJoin` t1) -> do
                     let actualSets = extract sets
                     let actualTypes = extract types
                     let filloutBase = if BaseFirstEd `elem` actualSets 
@@ -165,13 +165,15 @@ getFilteredCards runDB sets maybeMinCost maybeMaxCost maybeNeedsPotion maybeNeed
                                 then [c ^. CardSet `in_` valList [minBound..maxBound]]
                                 else queries
                     forM_ amendedQueries where_
+                    on (t1 ^. TypeId ==. tc1 ^. TypeCardTypeId)
+                    on (c ^. CardId ==. tc1 ^. TypeCardCardId)
                     on (lp1 ?. LinkPairsCardTwo ==. c2 ?. CardId)
                     on (lp1 ?. LinkPairsCardOne ==. lp ?. LinkPairsCardOne)
                     on (c1 ?. CardId ==. lp ?. LinkPairsCardTwo)
                     on (lp ?. LinkPairsCardOne ==. just (c ^. CardId))
                     on (t ^. TypeId ==. tc ^. TypeCardTypeId)
                     on (c ^. CardId ==. tc ^. TypeCardCardId)
-                    return (c, t, c2)
+                    return (c, t1, c2)
             return . map uniques $ foldr mergeList [] sqlres
                 where
                     extract :: [LenientData a] -> [a]
