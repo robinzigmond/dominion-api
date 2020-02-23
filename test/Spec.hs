@@ -11,8 +11,6 @@ import Network.HTTP.Types (Status(..))
 import Network.Wai.Handler.Warp (run)
 import Servant
 import Servant.Client
-import System.Directory (removeFile)
-import System.IO
 import Test.Hspec
 import Web.HttpApiData (LenientData(..))
 

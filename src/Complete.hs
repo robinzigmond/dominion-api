@@ -5,6 +5,7 @@
 module Complete where
 
 import Network.Wai
+import Network.Wai.Middleware.Cors
 import Servant
 
 import Auth (PrivateAPI, authContext)
@@ -26,4 +27,4 @@ dominionAPI = Proxy
 
 
 api :: (forall a. RunDB a) -> Application
-api runDB = serveWithContext dominionAPI authContext $ server runDB
+api runDB = simpleCors $ serveWithContext dominionAPI authContext $ server runDB

@@ -47,7 +47,7 @@ dependencies:
 - string-conversions
 - containers
 - mtl
-- directory
+- wai-cors
 
 library:
   source-dirs: src
