@@ -19,7 +19,7 @@ data CardType = Action | Treasure | Victory | Curse | Attack | Reaction | Durati
                 | Prize | Shelter | Ruins | Looter | Knight | Reserve | Traveller
                 | Gathering | Castle | Night | Heirloom | Fate | Doom | Spirit
                 | Zombie | Event | Landmark | Boon | Hex | State | Artifact
-                | Project
+                | Project | Way
                 deriving (Eq, Ord, Show, Read, Enum, Bounded, Generic)
 
 derivePersistField "CardType"
@@ -46,7 +46,8 @@ instance ToHttpApiData CardType where
 data Set = Base | BaseFirstEd | BaseSecondEd | Intrigue | IntrigueFirstEd
             | IntrigueSecondEd | Seaside | Alchemy | Prosperity
             | Cornucopia | Hinterlands | DarkAges | Guilds
-            | Adventures | Empires | Nocturne | Renaissance | Promo
+            | Adventures | Empires | Nocturne | Renaissance
+            | Menagerie | Promo
             deriving (Eq, Show, Read, Enum, Bounded, Generic)
 
 derivePersistField "Set"
